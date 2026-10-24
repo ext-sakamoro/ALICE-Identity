@@ -7,7 +7,7 @@
 //! certificate:
 //!
 //! ```text
-//! signed = DEVICE_CERT_CONTEXT || body
+//! signed = DEVICE_CERT_CONTEXT || body (the subject is at most `MAX_SUBJECT_LEN` bytes)
 //! body   = version (1) || subject length (u16 BE) || subject (UTF-8, `did:method:id`)
 //!          || device_public (32) || noise_static (32) || issued_at (u64 BE) || not_after (u64 BE)
 //!          || cert_id (16) || issuer_public (32)
@@ -24,6 +24,12 @@ use std::fmt;
 /// The only certificate layout this version reads and writes (version 1, without the Noise static
 /// key, is refused as [`DeviceCertError::UnsupportedVersion`])
 pub const DEVICE_CERT_VERSION: u8 = 2;
+
+/// The longest subject (`did:method:id` text, in bytes) a certificate takes, at issue and when decoded
+pub const MAX_SUBJECT_LEN: usize = 255;
+
+/// The longest encoded certificate: one whose subject is [`MAX_SUBJECT_LEN`] bytes
+pub const MAX_DEVICE_CERT_LEN: usize = 1 + 2 + MAX_SUBJECT_LEN + TAIL + SIGNATURE;
 
 /// Prefixed to the body before signing (domain separation)
 pub const DEVICE_CERT_CONTEXT: &[u8] = b"alice-identity device-cert v2";
@@ -52,6 +58,8 @@ pub enum DeviceCertError {
     Malformed(&'static str),
     /// The subject is not a DID whose `did:method:id` text reads back as the same DID
     InvalidSubject,
+    /// The subject text is longer than [`MAX_SUBJECT_LEN`] bytes (its length is given)
+    SubjectTooLong(usize),
     /// `not_after` is not after `issued_at`
     InvalidValidity,
     /// The certificate names another issuer than the master key it is checked against
@@ -70,6 +78,10 @@ impl fmt::Display for DeviceCertError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported device certificate version {v}"),
             Self::Malformed(what) => write!(f, "malformed device certificate: {what}"),
             Self::InvalidSubject => write!(f, "device certificate subject is not a canonical DID"),
+            Self::SubjectTooLong(n) => write!(
+                f,
+                "device certificate subject is {n} bytes, over {MAX_SUBJECT_LEN}"
+            ),
             Self::InvalidValidity => {
                 write!(f, "device certificate not_after is not after issued_at")
             }
@@ -102,8 +114,11 @@ const SIGNATURE: usize = 64;
 /// The subject as stored: `did:method:id`, accepted only when it parses back to the same DID
 fn canonical_subject(subject: &Did) -> Result<String, DeviceCertError> {
     let text = subject.to_string();
+    if text.len() > MAX_SUBJECT_LEN {
+        return Err(DeviceCertError::SubjectTooLong(text.len()));
+    }
     match Did::parse(&text) {
-        Ok(back) if back == *subject && u16::try_from(text.len()).is_ok() => Ok(text),
+        Ok(back) if back == *subject => Ok(text),
         _ => Err(DeviceCertError::InvalidSubject),
     }
 }
@@ -113,6 +128,7 @@ impl DeviceCert {
     ///
     /// # Errors
     /// [`DeviceCertError::InvalidValidity`] when `not_after <= issued_at`,
+    /// [`DeviceCertError::SubjectTooLong`] when the subject text is over [`MAX_SUBJECT_LEN`] bytes,
     /// [`DeviceCertError::InvalidSubject`] when the subject does not round-trip as text
     pub fn issue(
         master: &KeyPair,
@@ -180,7 +196,8 @@ impl DeviceCert {
     ///
     /// # Errors
     /// [`DeviceCertError::Malformed`] for a short or long input or a bad subject length,
-    /// [`DeviceCertError::UnsupportedVersion`], [`DeviceCertError::InvalidSubject`]
+    /// [`DeviceCertError::UnsupportedVersion`], [`DeviceCertError::SubjectTooLong`],
+    /// [`DeviceCertError::InvalidSubject`]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, DeviceCertError> {
         let (&version, rest) = bytes
             .split_first()
@@ -192,6 +209,9 @@ impl DeviceCert {
             .split_first_chunk::<2>()
             .ok_or(DeviceCertError::Malformed("subject length"))?;
         let len = usize::from(u16::from_be_bytes(*len));
+        if len > MAX_SUBJECT_LEN {
+            return Err(DeviceCertError::SubjectTooLong(len));
+        }
         if rest.len() < len {
             return Err(DeviceCertError::Malformed("subject"));
         }
