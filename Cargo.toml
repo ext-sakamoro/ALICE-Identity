@@ -1,0 +1,15 @@
+[package]
+name = "alice-identity"
+version = "1.2.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
+# proprietary: crates.io へ出さない (LICENSE 参照)
+publish = false
+description = "Decentralized identity (DID) — self-sovereign identity as DAG trust graphs, W3C DID Core + Ed25519Signature2020"
+repository = "https://github.com/ext-sakamoro/ALICE-Identity"
+authors = ["Moroya Sakamoto"]
+
+[dependencies]
+# Ed25519 and SHA-256 come from alice-sign (MIT OR Apache-2.0), taken by git at a full commit
+# until it is published; the git and rev keys go away then
+alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "8a1b00d800082187a8693732a9ffb806c98814e7" }
