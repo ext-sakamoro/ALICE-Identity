@@ -11,7 +11,7 @@ Decentralized identity (DID) — self-sovereign identity as DAG trust graphs.
 - **Trust Graphs**: DAG-based transitive trust with path discovery
 - **Revocation Registry**: Credential revocation tracking
 - **Claim Schemas**: Define and validate credential claim structures
-- **Device certificates**: a master key certifies a device key for a time window; signed revocation lists withdraw certificates
+- **Device certificates**: a master key certifies a device key and the device's Noise static key (X25519) for a time window; signed revocation lists withdraw certificates
 - **Artifact signatures**: a certified device key signs the digest of any artifact for one stated context (such as `alice-mls/artifact/v1`); the verifier names the context it expects, checks the certificate at its own time and against the revocation list (skipping that check has to be stated, `Revocation::NoListAvailable`), and verifies strictly. The signature covers the digest of the whole certificate, so it cannot be moved under another issuer's certificate for the same device key. Bind everything to protect into the one digest (for example `SHA-256(law_ref || payload_digest)`)
 
 ## Usage
@@ -41,8 +41,6 @@ assert!(graph.is_trusted(&did_a, &did_b));
 
 ## License
 
-License: LicenseRef-Proprietary
-
-`LicenseRef-Proprietary`: using, copying, modifying or distributing the source needs a written agreement with the copyright holder, Moroya Sakamoto. The text is [LICENSE-Proprietary](LICENSE-Proprietary).
+`LicenseRef-Proprietary`. The text is [LICENSE-Proprietary](LICENSE-Proprietary).
 
 Enquiries: https://extoria.co.jp/

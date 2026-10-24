@@ -1,5 +1,5 @@
-//! Device certificates: a master key vouches for one device key of the same identity for a
-//! bounded time.
+//! Device certificates: a master key vouches for one device key, and the device's Noise static
+//! key, of the same identity for a bounded time.
 //!
 //! The certificate is fixed width apart from the subject DID, encoded as one canonical byte
 //! layout and signed with a context prefix, so a signature over other data under the same
@@ -9,7 +9,7 @@
 //! ```text
 //! signed = DEVICE_CERT_CONTEXT || body
 //! body   = version (1) || subject length (u16 BE) || subject (UTF-8, `did:method:id`)
-//!          || device_public (32) || issued_at (u64 BE) || not_after (u64 BE)
+//!          || device_public (32) || noise_static (32) || issued_at (u64 BE) || not_after (u64 BE)
 //!          || cert_id (16) || issuer_public (32)
 //! bytes  = body || signature (64)
 //! ```
@@ -21,18 +21,21 @@ use crate::did::Did;
 use alice_sign::{KeyPair, PublicKey, Signature};
 use std::fmt;
 
-/// The only certificate layout this version reads and writes
-pub const DEVICE_CERT_VERSION: u8 = 1;
+/// The only certificate layout this version reads and writes (version 1, without the Noise static
+/// key, is refused as [`DeviceCertError::UnsupportedVersion`])
+pub const DEVICE_CERT_VERSION: u8 = 2;
 
 /// Prefixed to the body before signing (domain separation)
-pub const DEVICE_CERT_CONTEXT: &[u8] = b"alice-identity device-cert v1";
+pub const DEVICE_CERT_CONTEXT: &[u8] = b"alice-identity device-cert v2";
 
-/// A master key's statement that `device_public` belongs to `subject` for a bounded time
+/// A master key's statement that `device_public` (the signing key) and `noise_static` (the X25519
+/// static key of the device's Noise handshakes) belong to `subject` for a bounded time
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceCert {
     version: u8,
     subject: Did,
     device_public: [u8; 32],
+    noise_static: [u8; 32],
     issued_at: u64,
     not_after: u64,
     cert_id: [u8; 16],
@@ -92,8 +95,8 @@ impl fmt::Display for DeviceCertError {
 
 impl std::error::Error for DeviceCertError {}
 
-/// Bytes after the subject: device key, two times, id and issuer key
-const TAIL: usize = 32 + 8 + 8 + 16 + 32;
+/// Bytes after the subject: device key, Noise static key, two times, id and issuer key
+const TAIL: usize = 32 + 32 + 8 + 8 + 16 + 32;
 const SIGNATURE: usize = 64;
 
 /// The subject as stored: `did:method:id`, accepted only when it parses back to the same DID
@@ -106,7 +109,7 @@ fn canonical_subject(subject: &Did) -> Result<String, DeviceCertError> {
 }
 
 impl DeviceCert {
-    /// Sign a certificate for `device_public` under `subject` with the master key
+    /// Sign a certificate for `device_public` and `noise_static` under `subject` with the master key
     ///
     /// # Errors
     /// [`DeviceCertError::InvalidValidity`] when `not_after <= issued_at`,
@@ -115,6 +118,7 @@ impl DeviceCert {
         master: &KeyPair,
         subject: &Did,
         device_public: [u8; 32],
+        noise_static: [u8; 32],
         issued_at: u64,
         not_after: u64,
         cert_id: [u8; 16],
@@ -127,6 +131,7 @@ impl DeviceCert {
             version: DEVICE_CERT_VERSION,
             subject: subject.clone(),
             device_public,
+            noise_static,
             issued_at,
             not_after,
             cert_id,
@@ -147,6 +152,7 @@ impl DeviceCert {
         b.extend_from_slice(&len.to_be_bytes());
         b.extend_from_slice(subject.as_bytes());
         b.extend_from_slice(&self.device_public);
+        b.extend_from_slice(&self.noise_static);
         b.extend_from_slice(&self.issued_at.to_be_bytes());
         b.extend_from_slice(&self.not_after.to_be_bytes());
         b.extend_from_slice(&self.cert_id);
@@ -204,11 +210,12 @@ impl DeviceCert {
             version,
             subject,
             device_public: field(0, 32).try_into().expect("32 bytes"),
-            issued_at: u64_at(32),
-            not_after: u64_at(40),
-            cert_id: field(48, 16).try_into().expect("16 bytes"),
-            issuer_public: field(64, 32).try_into().expect("32 bytes"),
-            signature: field(96, SIGNATURE).try_into().expect("64 bytes"),
+            noise_static: field(32, 32).try_into().expect("32 bytes"),
+            issued_at: u64_at(64),
+            not_after: u64_at(72),
+            cert_id: field(80, 16).try_into().expect("16 bytes"),
+            issuer_public: field(96, 32).try_into().expect("32 bytes"),
+            signature: field(128, SIGNATURE).try_into().expect("64 bytes"),
         })
     }
 
@@ -255,6 +262,12 @@ impl DeviceCert {
     #[must_use]
     pub const fn device_public(&self) -> &[u8; 32] {
         &self.device_public
+    }
+
+    /// The X25519 static key of the device's Noise handshakes
+    #[must_use]
+    pub const fn noise_static(&self) -> &[u8; 32] {
+        &self.noise_static
     }
 
     #[must_use]
