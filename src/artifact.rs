@@ -36,6 +36,14 @@ pub const ARTIFACT_VERSION: u8 = 1;
 /// The longest context, in bytes
 pub const MAX_CONTEXT_LEN: usize = 64;
 
+/// The longest encoded [`ArtifactSignature`] for a context of `context_len` bytes: one carrying a certificate
+/// of [`crate::device_cert::MAX_DEVICE_CERT_LEN`] bytes
+#[must_use]
+pub const fn max_encoded_len(context_len: usize) -> usize {
+    // version, context length, context, digest algorithm, digest, certificate length, certificate, signature
+    1 + 1 + context_len + 1 + 32 + 2 + crate::device_cert::MAX_DEVICE_CERT_LEN + 64
+}
+
 /// The digest algorithm of a [`PayloadDigest`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DigestAlg {

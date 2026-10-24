@@ -11,6 +11,7 @@
 
 - `DeviceCert::noise_static`
 - `MAX_SUBJECT_LEN` / `MAX_DEVICE_CERT_LEN` / `DeviceCertError::SubjectTooLong`
+- `artifact::max_encoded_len`: context の長さごとの、符号化した artifact signature の最大の長さ (最長の証明書の時)
 
 ### Changed
 
