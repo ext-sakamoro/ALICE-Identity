@@ -117,6 +117,7 @@ fn a_device_certificate_signature_is_not_a_list_signature() {
         &m,
         &Did::parse("did:alice:p").unwrap(),
         [1; 32],
+        [2; 32],
         AT,
         AT + 1,
         id(4),
@@ -269,7 +270,7 @@ fn lists_of_different_masters_are_kept_apart() {
 fn a_certificate_is_revoked_by_its_issuers_list() {
     let m = master();
     let did = Did::parse("did:alice:p").unwrap();
-    let c = DeviceCert::issue(&m, &did, [1; 32], AT, AT + 10, id(6)).unwrap();
+    let c = DeviceCert::issue(&m, &did, [1; 32], [2; 32], AT, AT + 10, id(6)).unwrap();
     let mut r = CertRevocations::new();
     assert!(!r.revokes(&c));
     r.accept(RevocationList::issue(&m, 1, AT, &[id(6)]), &m.public())

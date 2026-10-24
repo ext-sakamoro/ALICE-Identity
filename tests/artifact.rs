@@ -16,6 +16,7 @@ const ISSUED_AT: u64 = 1_800_000_000;
 const NOT_AFTER: u64 = 1_800_086_400;
 const NOW: u64 = 1_800_000_100;
 const CERT_ID: [u8; 16] = [0xa5; 16];
+const NOISE: [u8; 32] = [0x4e; 32];
 const CONTEXT: &[u8] = b"alice-mls/artifact/v1";
 
 fn master() -> KeyPair {
@@ -32,6 +33,7 @@ fn cert_with(device_public: [u8; 32], cert_id: [u8; 16]) -> DeviceCert {
         &master(),
         &subject,
         device_public,
+        NOISE,
         ISSUED_AT,
         NOT_AFTER,
         cert_id,
@@ -118,8 +120,8 @@ fn the_signature_covers_the_documented_message_and_encodes_as_documented() {
     assert_eq!(s.cert(), &cert());
     let want = expected_bytes(CONTEXT, d.bytes(), &cert(), &sig);
     assert_eq!(s.to_bytes(), want);
-    // golden size: 1 + 1 + 21 + 1 + 32 + 2 + 181 (the device certificate) + 64
-    assert_eq!(want.len(), 303);
+    // golden size: 1 + 1 + 21 + 1 + 32 + 2 + 213 (the device certificate) + 64
+    assert_eq!(want.len(), 335);
     assert_eq!(ArtifactSignature::from_bytes(&want), Ok(s));
 }
 
@@ -475,6 +477,7 @@ fn a_certificate_too_long_for_the_length_field_is_refused() {
         &master(),
         &subject,
         device().public().0,
+        NOISE,
         ISSUED_AT,
         NOT_AFTER,
         CERT_ID,
@@ -500,6 +503,7 @@ fn a_signature_does_not_move_to_another_issuers_certificate_for_the_same_key_and
         &other_master,
         &other_subject,
         device().public().0,
+        NOISE,
         ISSUED_AT,
         NOT_AFTER,
         CERT_ID,
