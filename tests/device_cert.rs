@@ -3,7 +3,8 @@
 //! those bytes, so neither comes from the code under test.
 
 use alice_identity::device_cert::{
-    DeviceCert, DeviceCertError, DEVICE_CERT_CONTEXT, DEVICE_CERT_VERSION,
+    DeviceCert, DeviceCertError, DEVICE_CERT_CONTEXT, DEVICE_CERT_VERSION, MAX_DEVICE_CERT_LEN,
+    MAX_SUBJECT_LEN,
 };
 use alice_identity::did::Did;
 use alice_sign::{KeyPair, PublicKey, Signature};
@@ -282,19 +283,28 @@ fn decoding_rejects_another_version_and_a_subject_that_is_not_a_did() {
         Err(DeviceCertError::InvalidSubject)
     );
 
-    // a subject length past the end of the input
-    let mut too_long = bytes.clone();
-    too_long[1] = 0xff;
+    // a subject length within the bound but past the end of the input
+    let mut past_end = bytes.clone();
+    past_end[1] = 0;
+    past_end[2] = 0xff;
     assert!(matches!(
-        DeviceCert::from_bytes(&too_long),
+        DeviceCert::from_bytes(&past_end),
         Err(DeviceCertError::Malformed(_))
     ));
+    // a subject length over the bound is refused by the length alone
+    let mut too_long = bytes.clone();
+    too_long[1] = 0xff;
+    assert_eq!(
+        DeviceCert::from_bytes(&too_long),
+        Err(DeviceCertError::SubjectTooLong(0xff12))
+    );
 }
 
 #[test]
 fn errors_say_what_failed() {
     for (e, word) in [
         (DeviceCertError::UnsupportedVersion(2), "version"),
+        (DeviceCertError::SubjectTooLong(300), "over 255"),
         (DeviceCertError::Malformed("subject"), "subject"),
         (DeviceCertError::InvalidSubject, "subject"),
         (DeviceCertError::InvalidValidity, "not_after"),
@@ -441,4 +451,67 @@ fn the_noise_static_key_is_under_the_master_signature() {
             "byte {i}"
         );
     }
+}
+
+fn subject_of_len(n: usize) -> Did {
+    let d = Did::parse(&format!("did:alice:{}", "p".repeat(n - "did:alice:".len()))).unwrap();
+    assert_eq!(d.to_string().len(), n);
+    d
+}
+
+#[test]
+fn the_subject_is_bounded_at_issue() {
+    let m = master();
+    assert_eq!(MAX_SUBJECT_LEN, 255);
+    // the bound itself is issued, and its certificate has the largest length
+    let at = DeviceCert::issue(
+        &m,
+        &subject_of_len(MAX_SUBJECT_LEN),
+        DEVICE,
+        NOISE,
+        ISSUED_AT,
+        NOT_AFTER,
+        CERT_ID,
+    )
+    .unwrap();
+    assert_eq!(at.to_bytes().len(), MAX_DEVICE_CERT_LEN);
+    assert_eq!(
+        MAX_DEVICE_CERT_LEN,
+        1 + 2 + MAX_SUBJECT_LEN + 32 + 32 + 8 + 8 + 16 + 32 + 64
+    );
+    assert_eq!(
+        DeviceCert::issue(
+            &m,
+            &subject_of_len(MAX_SUBJECT_LEN + 1),
+            DEVICE,
+            NOISE,
+            ISSUED_AT,
+            NOT_AFTER,
+            CERT_ID,
+        ),
+        Err(DeviceCertError::SubjectTooLong(MAX_SUBJECT_LEN + 1))
+    );
+}
+
+#[test]
+fn a_decoded_subject_over_the_bound_is_refused() {
+    // a certificate laid out by hand with a subject one byte over the bound, validly signed
+    let m = master();
+    let did = subject_of_len(MAX_SUBJECT_LEN + 1).to_string();
+    let mut body = vec![2u8];
+    body.extend_from_slice(&u16::try_from(did.len()).unwrap().to_be_bytes());
+    body.extend_from_slice(did.as_bytes());
+    body.extend_from_slice(&DEVICE);
+    body.extend_from_slice(&NOISE);
+    body.extend_from_slice(&ISSUED_AT.to_be_bytes());
+    body.extend_from_slice(&NOT_AFTER.to_be_bytes());
+    body.extend_from_slice(&CERT_ID);
+    body.extend_from_slice(&m.public().0);
+    let mut signed = DEVICE_CERT_CONTEXT.to_vec();
+    signed.extend_from_slice(&body);
+    body.extend_from_slice(&m.sign(&signed).0);
+    assert_eq!(
+        DeviceCert::from_bytes(&body),
+        Err(DeviceCertError::SubjectTooLong(MAX_SUBJECT_LEN + 1))
+    );
 }

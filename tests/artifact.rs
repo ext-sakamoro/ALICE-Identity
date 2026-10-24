@@ -9,6 +9,7 @@ use alice_identity::artifact::{
 };
 use alice_identity::cert_revocation::{CertRevocations, RevocationList};
 use alice_identity::device_cert::{DeviceCert, DeviceCertError};
+use alice_identity::device_cert::{MAX_DEVICE_CERT_LEN, MAX_SUBJECT_LEN};
 use alice_identity::did::Did;
 use alice_sign::{KeyPair, PublicKey, Signature};
 
@@ -469,11 +470,12 @@ fn a_weak_device_key_is_refused_even_when_the_lax_equation_holds() {
 }
 
 #[test]
-fn a_certificate_too_long_for_the_length_field_is_refused() {
-    // the certificate's length is a u16; a subject near the u16 limit makes a longer certificate
-    let id = "a".repeat(65_500);
+fn the_longest_subject_a_certificate_takes_fits_an_artifact_signature() {
+    // the subject is bounded at issue, so every certificate fits the artifact's u16 length field
+    let id = "a".repeat(MAX_SUBJECT_LEN - "did:alice:".len());
     let subject = Did::parse(&format!("did:alice:{id}")).unwrap();
-    let long = DeviceCert::issue(
+    assert_eq!(subject.to_string().len(), MAX_SUBJECT_LEN);
+    let longest = DeviceCert::issue(
         &master(),
         &subject,
         device().public().0,
@@ -483,13 +485,9 @@ fn a_certificate_too_long_for_the_length_field_is_refused() {
         CERT_ID,
     )
     .unwrap();
-    assert!(long.to_bytes().len() > usize::from(u16::MAX));
-    assert_eq!(
-        sign_artifact(&device(), &long, CONTEXT, &digest()),
-        Err(ArtifactError::Malformed(
-            "certificate longer than 65535 bytes"
-        ))
-    );
+    assert_eq!(longest.to_bytes().len(), MAX_DEVICE_CERT_LEN);
+    let s = sign_artifact(&device(), &longest, CONTEXT, &digest()).unwrap();
+    assert_eq!(ArtifactSignature::from_bytes(&s.to_bytes()), Ok(s));
 }
 
 #[test]
