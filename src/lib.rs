@@ -19,6 +19,7 @@
 )]
 
 pub mod artifact;
+pub mod base58;
 pub mod cert_revocation;
 pub mod claim_schema;
 pub mod credential;

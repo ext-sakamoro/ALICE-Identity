@@ -1,6 +1,8 @@
 //! did.
 
+use crate::base58;
 use crate::errors::IdentityError;
+use alice_sign::PublicKey;
 use std::fmt;
 
 // Did
@@ -11,6 +13,9 @@ pub struct Did {
     pub method: String,
     pub id: String,
 }
+
+/// The multicodec of an Ed25519 public key (0xed) as its unsigned varint
+const ED25519_MULTICODEC: [u8; 2] = [0xed, 0x01];
 
 impl Did {
     #[must_use]
@@ -34,6 +39,47 @@ impl Did {
             method: parts[1].to_owned(),
             id: parts[2].to_owned(),
         })
+    }
+
+    /// The did:key of an Ed25519 public key: `did:key:z` + base58btc(0xed 0x01 ‖ the 32 key bytes)
+    /// (the multicodec of an Ed25519 public key is 0xed, written as the varint 0xed 0x01)
+    #[must_use]
+    pub fn key_ed25519(public: &PublicKey) -> Self {
+        let mut bytes = Vec::with_capacity(ED25519_MULTICODEC.len() + public.0.len());
+        bytes.extend_from_slice(&ED25519_MULTICODEC);
+        bytes.extend_from_slice(&public.0);
+        Self::new("key", &format!("z{}", base58::encode(&bytes)))
+    }
+
+    /// The Ed25519 public key a did:key carries
+    ///
+    /// # Errors
+    /// `IdentityError::InvalidDid` when the DID is not of method `key`, its multibase is not
+    /// base58btc (`z`), a character is outside the base58btc alphabet, the decoded bytes do not
+    /// start with the Ed25519 multicodec 0xed 0x01, or they are not 34 long.
+    pub fn ed25519_public_key(&self) -> Result<PublicKey, IdentityError> {
+        let refuse = |why: &str| IdentityError::InvalidDid(format!("{self}: {why}"));
+        if self.method != "key" {
+            return Err(refuse("not a did:key"));
+        }
+        let Some(text) = self.id.strip_prefix('z') else {
+            return Err(refuse("the multibase is not base58btc ('z')"));
+        };
+        let bytes = base58::decode(text).map_err(|e| refuse(&e.to_string()))?;
+        if bytes.get(..2) != Some(&ED25519_MULTICODEC[..]) {
+            return Err(refuse(
+                "not an Ed25519 public key (multicodec is not 0xed 0x01)",
+            ));
+        }
+        if bytes.len() != ED25519_MULTICODEC.len() + 32 {
+            return Err(refuse(&format!(
+                "the decoded length is {}, not 34",
+                bytes.len()
+            )));
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&bytes[2..]);
+        Ok(PublicKey(key))
     }
 
     /// Validate that the DID has non-empty method and id.

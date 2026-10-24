@@ -12,6 +12,8 @@
 - `DeviceCert::noise_static`
 - `MAX_SUBJECT_LEN` / `MAX_DEVICE_CERT_LEN` / `DeviceCertError::SubjectTooLong`
 - `artifact::max_encoded_len`: context の長さごとの、符号化した artifact signature の最大の長さ (最長の証明書の時)
+- `Did::key_ed25519` / `Did::ed25519_public_key`: Ed25519 の公開鍵と `did:key` (multibase `z` + base58btc、multicodec `0xed 0x01`) の変換 読み戻しは別の method / multibase / multicodec、base58btc の外の文字、34 byte 以外の長さを `IdentityError::InvalidDid` で断る
+- `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
 

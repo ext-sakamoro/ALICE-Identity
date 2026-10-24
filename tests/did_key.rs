@@ -94,12 +94,16 @@ fn a_wrong_multicodec_is_refused() {
 
 #[test]
 fn a_wrong_length_is_refused() {
-    let (did, _) = VECTORS[0];
-    // one character shorter, one character longer
-    let e = refused(&did[..did.len() - 1]);
-    assert!(e.contains("length"), "{e}");
-    let e = refused(&format!("{did}2"));
-    assert!(e.contains("length"), "{e}");
+    // the Ed25519 multicodec followed by 31 and by 33 key bytes
+    for n in [31usize, 33] {
+        let mut bytes = vec![0xed, 0x01];
+        bytes.extend(std::iter::repeat_n(7u8, n));
+        let e = refused(&format!(
+            "did:key:z{}",
+            alice_identity::base58::encode(&bytes)
+        ));
+        assert!(e.contains("length"), "{n}: {e}");
+    }
 }
 
 #[test]
