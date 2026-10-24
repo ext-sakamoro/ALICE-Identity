@@ -2,8 +2,8 @@
 name = "alice-identity"
 version = "1.2.0"
 edition = "2021"
+rust-version = "1.88"
 license = "LicenseRef-Proprietary"
-# proprietary: crates.io へ出さない (LICENSE 参照)
 publish = false
 description = "Decentralized identity (DID) — self-sovereign identity as DAG trust graphs, W3C DID Core + Ed25519Signature2020"
 repository = "https://github.com/ext-sakamoro/ALICE-Identity"

@@ -27,6 +27,18 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  msrv:
+    name: MSRV (rust-version 1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.88
+      # `cargo +1.88`: rust-toolchain.toml would otherwise select the pinned toolchain for plain `cargo`
+      - name: Check on the declared rust-version
+        run: |
+          cargo +1.88 --version | grep -q '^cargo 1\.88\.'
+          cargo +1.88 check --all-features
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
