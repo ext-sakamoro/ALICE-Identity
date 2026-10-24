@@ -4,8 +4,9 @@
 //! FIPS 180-2 "abc" vector.
 
 use alice_identity::artifact::{
-    sha256_payload, sign_artifact, verify_artifact, ArtifactError, ArtifactSignature, DigestAlg,
-    PayloadDigest, Revocation, ARTIFACT_DOMAIN, ARTIFACT_VERSION, MAX_CONTEXT_LEN,
+    max_encoded_len, sha256_payload, sign_artifact, verify_artifact, ArtifactError,
+    ArtifactSignature, DigestAlg, PayloadDigest, Revocation, ARTIFACT_DOMAIN, ARTIFACT_VERSION,
+    MAX_CONTEXT_LEN,
 };
 use alice_identity::cert_revocation::{CertRevocations, RevocationList};
 use alice_identity::device_cert::{DeviceCert, DeviceCertError};
@@ -487,6 +488,13 @@ fn the_longest_subject_a_certificate_takes_fits_an_artifact_signature() {
     .unwrap();
     assert_eq!(longest.to_bytes().len(), MAX_DEVICE_CERT_LEN);
     let s = sign_artifact(&device(), &longest, CONTEXT, &digest()).unwrap();
+    // the bound of an encoded signature is reached by the longest certificate, for each context length
+    assert_eq!(s.to_bytes().len(), max_encoded_len(CONTEXT.len()));
+    assert!(signed().to_bytes().len() < max_encoded_len(CONTEXT.len()));
+    assert_eq!(
+        max_encoded_len(CONTEXT.len()),
+        1 + 1 + CONTEXT.len() + 1 + 32 + 2 + MAX_DEVICE_CERT_LEN + 64
+    );
     assert_eq!(ArtifactSignature::from_bytes(&s.to_bytes()), Ok(s));
 }
 
