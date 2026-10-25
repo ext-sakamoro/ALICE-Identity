@@ -3,22 +3,22 @@
 use crate::did::Did;
 use crate::did_document::DidDocument;
 use crate::errors::IdentityError;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 // DidResolver
 // ---------------------------------------------------------------------------
 
 pub struct DidResolver {
-    documents: HashMap<String, DidDocument>,
-    deactivated: HashSet<String>,
+    documents: BTreeMap<String, DidDocument>,
+    deactivated: BTreeSet<String>,
 }
 
 impl DidResolver {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            documents: HashMap::new(),
-            deactivated: HashSet::new(),
+            documents: BTreeMap::new(),
+            deactivated: BTreeSet::new(),
         }
     }
 

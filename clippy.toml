@@ -1,0 +1,22 @@
+# clippy configuration of alice-identity
+#
+# CI runs clippy with `--all-targets ... -D warnings`, which turns these lists into a
+# red gate for the library, the tests, the examples and the benches alike.
+# scripts/clippy_canary.py plants one use per entry (rows generated into
+# scripts/clippy_canary_calls.tsv by scripts/gen_clippy_canary_calls.py) and fails
+# unless clippy flags each one.
+disallowed-methods = [
+    { path = "std::collections::hash_map::RandomState::new", reason = "seeds from OS randomness and would make HashMap iteration order non-deterministic" },
+]
+disallowed-types = [
+    # disallowed-methods cannot name RandomState::default (a trait method, not
+    # reachable via the implementing type's path alone); naming the type itself here
+    # catches ::default() too, along with any other explicit naming.
+    { path = "std::collections::hash_map::RandomState", reason = "seeds from OS randomness and would make HashMap iteration order non-deterministic; see disallowed-methods for RandomState::new" },
+    # ALICE-Law G13: no output of this crate may depend on hash iteration order. The
+    # trust graph's paths and trustee lists, a schema's first failing field and a
+    # credential's claims all walk ordered collections; a new map or set must be a
+    # BTreeMap / BTreeSet or carry a reason at its use site.
+    { path = "std::collections::HashMap", reason = "iteration order depends on the per-instance random seed; use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "iteration order depends on the per-instance random seed; use BTreeSet" },
+]

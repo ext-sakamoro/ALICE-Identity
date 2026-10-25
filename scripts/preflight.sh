@@ -277,6 +277,18 @@ step "ci.yml / test: Clippy (all targets, warnings are errors)"
 relint
 ( export CARGO_TERM_COLOR="always"; cargo clippy --all-targets -- -D warnings )
 
+step "ci.yml / test: Clippy canary data (generator tests)"
+python3 scripts/test_gen_clippy_canary_calls.py
+
+step "ci.yml / test: Clippy canary data (generated from clippy.toml, no drift)"
+python3 scripts/gen_clippy_canary_calls.py --check
+
+step "ci.yml / test: Clippy canary (tests)"
+python3 scripts/test_clippy_canary.py
+
+step "ci.yml / test: Clippy canary (every planted banned call is flagged)"
+python3 scripts/clippy_canary.py
+
 step "ci.yml / test: Doc (warnings are errors)"
 ( export CARGO_TERM_COLOR="always" RUSTDOCFLAGS="-Dwarnings"; cargo doc --no-deps )
 

@@ -1,7 +1,7 @@
 //! claim schema.
 
 use crate::errors::IdentityError;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ClaimSchema
 // ---------------------------------------------------------------------------
@@ -9,15 +9,15 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimSchema {
     pub required_fields: Vec<String>,
-    pub field_types: HashMap<String, String>,
+    pub field_types: BTreeMap<String, String>,
 }
 
 impl ClaimSchema {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             required_fields: Vec::new(),
-            field_types: HashMap::new(),
+            field_types: BTreeMap::new(),
         }
     }
 
@@ -36,7 +36,7 @@ impl ClaimSchema {
     ///
     /// # Errors
     /// Returns an error if required fields are missing or types don't match.
-    pub fn validate(&self, claims: &HashMap<String, String>) -> Result<(), IdentityError> {
+    pub fn validate(&self, claims: &BTreeMap<String, String>) -> Result<(), IdentityError> {
         // Check required fields
         for field in &self.required_fields {
             if !claims.contains_key(field) {

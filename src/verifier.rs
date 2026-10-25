@@ -3,20 +3,20 @@
 use crate::credential::VerifiableCredential;
 use crate::did::Did;
 use crate::errors::IdentityError;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 // CredentialVerifier
 // ---------------------------------------------------------------------------
 
 pub struct CredentialVerifier {
-    trusted_issuers: HashSet<Did>,
+    trusted_issuers: BTreeSet<Did>,
 }
 
 impl CredentialVerifier {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            trusted_issuers: HashSet::new(),
+            trusted_issuers: BTreeSet::new(),
         }
     }
 

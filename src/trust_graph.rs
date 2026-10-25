@@ -1,20 +1,20 @@
 //! trust graph.
 
 use crate::did::Did;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 // TrustGraph
 // ---------------------------------------------------------------------------
 
 pub struct TrustGraph {
-    edges: HashMap<Did, HashSet<Did>>,
+    edges: BTreeMap<Did, BTreeSet<Did>>,
 }
 
 impl TrustGraph {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            edges: HashMap::new(),
+            edges: BTreeMap::new(),
         }
     }
 
@@ -46,7 +46,7 @@ impl TrustGraph {
             return Some(vec![from.clone()]);
         }
 
-        let mut visited = HashSet::new();
+        let mut visited = BTreeSet::new();
         let mut queue = VecDeque::new();
         visited.insert(from.clone());
         queue.push_back(vec![from.clone()]);

@@ -20,7 +20,7 @@ use crate::selective_disclosure::*;
 use crate::service_endpoint::*;
 use crate::trust_graph::*;
 use crate::verifier::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 // -- helpers --
 
@@ -37,7 +37,7 @@ fn did_carol() -> Did {
 }
 
 fn sample_credential(issuer: &Did, subject: &Did) -> VerifiableCredential {
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("name".to_owned(), "Alice".to_owned());
     claims.insert("age".to_owned(), "30".to_owned());
     claims.insert("active".to_owned(), "true".to_owned());
@@ -134,7 +134,7 @@ fn did_clone() {
 
 #[test]
 fn did_hash_consistent() {
-    let mut set = HashSet::new();
+    let mut set = BTreeSet::new();
     set.insert(did_alice());
     set.insert(did_alice());
     assert_eq!(set.len(), 1);
@@ -229,7 +229,7 @@ fn credential_no_expiry() {
         subject: did_bob(),
         issued_at: 0,
         expires_at: None,
-        claims: HashMap::new(),
+        claims: BTreeMap::new(),
         proof: vec![1],
     };
     assert!(vc.expires_at.is_none());
@@ -593,7 +593,7 @@ fn schema_validate_ok() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("name", "string");
     schema.add_required_field("age", "integer");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("name".to_owned(), "Alice".to_owned());
     claims.insert("age".to_owned(), "30".to_owned());
     assert!(schema.validate(&claims).is_ok());
@@ -603,7 +603,7 @@ fn schema_validate_ok() {
 fn schema_missing_required() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("name", "string");
-    let claims = HashMap::new();
+    let claims = BTreeMap::new();
     assert!(matches!(
         schema.validate(&claims),
         Err(IdentityError::ClaimNotFound(_))
@@ -614,7 +614,7 @@ fn schema_missing_required() {
 fn schema_invalid_integer() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("age", "integer");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("age".to_owned(), "not_a_number".to_owned());
     assert!(matches!(
         schema.validate(&claims),
@@ -626,7 +626,7 @@ fn schema_invalid_integer() {
 fn schema_boolean_valid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("active", "boolean");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("active".to_owned(), "true".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }
@@ -635,7 +635,7 @@ fn schema_boolean_valid() {
 fn schema_boolean_invalid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("active", "boolean");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("active".to_owned(), "yes".to_owned());
     assert!(schema.validate(&claims).is_err());
 }
@@ -644,7 +644,7 @@ fn schema_boolean_invalid() {
 fn schema_date_valid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("dob", "date");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("dob".to_owned(), "1990-01-15".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }
@@ -653,7 +653,7 @@ fn schema_date_valid() {
 fn schema_date_invalid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("dob", "date");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("dob".to_owned(), "January".to_owned());
     assert!(schema.validate(&claims).is_err());
 }
@@ -663,7 +663,7 @@ fn schema_optional_field_present() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("name", "string");
     schema.add_optional_field("nickname", "string");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("name".to_owned(), "Alice".to_owned());
     claims.insert("nickname".to_owned(), "Ali".to_owned());
     assert!(schema.validate(&claims).is_ok());
@@ -674,7 +674,7 @@ fn schema_optional_field_absent() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("name", "string");
     schema.add_optional_field("nickname", "string");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("name".to_owned(), "Alice".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }
@@ -683,7 +683,7 @@ fn schema_optional_field_absent() {
 fn schema_unknown_type_passes() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("data", "custom");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("data".to_owned(), "anything".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }
@@ -692,7 +692,7 @@ fn schema_unknown_type_passes() {
 fn schema_extra_claims_ok() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("name", "string");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("name".to_owned(), "Alice".to_owned());
     claims.insert("extra".to_owned(), "value".to_owned());
     assert!(schema.validate(&claims).is_ok());
@@ -867,7 +867,7 @@ fn integration_full_identity_flow() {
     trust.add_trust(&holder, &issuer);
 
     // 4. Issue credential
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("degree".to_owned(), "PhD".to_owned());
     claims.insert("field".to_owned(), "Computer Science".to_owned());
     let vc = VerifiableCredential {
@@ -979,7 +979,7 @@ fn revocation_many_ids() {
 fn schema_negative_integer_valid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("score", "integer");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("score".to_owned(), "-42".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }
@@ -988,7 +988,7 @@ fn schema_negative_integer_valid() {
 fn schema_boolean_false_valid() {
     let mut schema = ClaimSchema::new();
     schema.add_required_field("flag", "boolean");
-    let mut claims = HashMap::new();
+    let mut claims = BTreeMap::new();
     claims.insert("flag".to_owned(), "false".to_owned());
     assert!(schema.validate(&claims).is_ok());
 }

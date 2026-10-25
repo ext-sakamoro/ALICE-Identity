@@ -8,7 +8,8 @@ use std::fmt;
 // Did
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Ordered by method, then id: the order of the `did:method:id` string (a method holds no `:`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Did {
     pub method: String,
     pub id: String,

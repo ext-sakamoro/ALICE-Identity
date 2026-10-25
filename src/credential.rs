@@ -1,7 +1,7 @@
 //! credential.
 
 use crate::did::Did;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // VerifiableCredential
 // ---------------------------------------------------------------------------
@@ -14,6 +14,6 @@ pub struct VerifiableCredential {
     pub subject: Did,
     pub issued_at: u64,
     pub expires_at: Option<u64>,
-    pub claims: HashMap<String, String>,
+    pub claims: BTreeMap<String, String>,
     pub proof: Vec<u8>,
 }

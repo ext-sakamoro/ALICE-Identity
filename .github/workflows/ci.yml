@@ -62,6 +62,20 @@ jobs:
           components: clippy
       - name: Clippy (all targets, warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
+      # the lists in clippy.toml (ALICE-Law G13) only gate anything if clippy
+      # flags a use of them: a throwaway crate with the same clippy.toml plants
+      # one banned use per row of scripts/clippy_canary_calls.tsv (0 rows
+      # fail). The rows are generated from clippy.toml, one per
+      # disallowed-methods / disallowed-types entry; --check fails when the file
+      # has drifted from clippy.toml
+      - name: Clippy canary data (generator tests)
+        run: python3 scripts/test_gen_clippy_canary_calls.py
+      - name: Clippy canary data (generated from clippy.toml, no drift)
+        run: python3 scripts/gen_clippy_canary_calls.py --check
+      - name: Clippy canary (tests)
+        run: python3 scripts/test_clippy_canary.py
+      - name: Clippy canary (every planted banned call is flagged)
+        run: python3 scripts/clippy_canary.py
       # every test target must run and pass; a run that passes no test fails (it compared nothing)
       - name: Test
         run: |

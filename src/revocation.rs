@@ -1,19 +1,19 @@
 //! revocation.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 // RevocationRegistry
 // ---------------------------------------------------------------------------
 
 pub struct RevocationRegistry {
-    revoked: HashSet<String>,
+    revoked: BTreeSet<String>,
 }
 
 impl RevocationRegistry {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            revoked: HashSet::new(),
+            revoked: BTreeSet::new(),
         }
     }
 

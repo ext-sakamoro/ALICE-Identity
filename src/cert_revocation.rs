@@ -16,7 +16,7 @@
 
 use crate::device_cert::DeviceCert;
 use alice_sign::{KeyPair, PublicKey, Signature};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// The only list layout this version reads and writes
@@ -237,7 +237,7 @@ pub enum Accepted {
 /// The newest verified revocation list of each master key, keyed by the master's public key
 #[derive(Debug, Clone, Default)]
 pub struct CertRevocations {
-    lists: HashMap<[u8; 32], RevocationList>,
+    lists: BTreeMap<[u8; 32], RevocationList>,
 }
 
 impl CertRevocations {

@@ -2,7 +2,7 @@
 
 use crate::credential::VerifiableCredential;
 use crate::errors::IdentityError;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // SelectiveDisclosure
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ impl SelectiveDisclosure {
         credential: &VerifiableCredential,
         fields: &[&str],
     ) -> Result<VerifiableCredential, IdentityError> {
-        let mut disclosed_claims = HashMap::new();
+        let mut disclosed_claims = BTreeMap::new();
         for &field in fields {
             let value = credential
                 .claims
