@@ -25,6 +25,8 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
+- CI (ALICE-Law G11): ALICE-Law の `scripts/g11_self_check.py` を pin の revision で全 OS の float-environment job と preflight で走らせる (表、表の行、共有の写し、自前の写しが目標か、manifest の 4 つ)
+- CI (ALICE-Law G11): `scripts/id_move_check.py` と試験を ALICE-Law 4e694684 の表の目標の bytes (決め直した版) にし、`.github/shared-files-pin` をその rev に移した
 
 - `.gitattributes` で text file を全 OS で LF で取り出す (Windows で共有の file が表の bytes と一致する)
 - toolchain の pin を 1.92.0 から 1.98.1 にする (共有の検査器が読む rustdoc JSON の形式に合わせる) `RevocationList::from_bytes` の id の切り出しを `as_chunks` にする (bytes は変わらない)

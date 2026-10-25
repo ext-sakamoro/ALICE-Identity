@@ -105,6 +105,13 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_shared_files.py
           scripts/shared_files.sh
+      - name: ALICE-Law G11 self-check (the four G11 checks at the pinned revision)
+        shell: bash
+        run: |
+          rev=$(awk '$1 == "rev" { print $2 }' .github/shared-files-pin)
+          git -c core.autocrlf=false clone --quiet --filter=blob:none https://github.com/ext-sakamoro/ALICE-Law.git "$RUNNER_TEMP/alice-law"
+          git -C "$RUNNER_TEMP/alice-law" checkout --quiet --detach "$rev"
+          python3 "$RUNNER_TEMP/alice-law/scripts/g11_self_check.py" --repo . --name ALICE-Identity
       - name: Effective rustc flags (release, library)
         if: runner.os != 'Windows'
         run: python3 scripts/build_flags_check.py -- cargo check --release --lib
