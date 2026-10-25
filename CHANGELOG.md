@@ -21,4 +21,5 @@
 
 ### Changed
 
+- `.gitattributes` で text file を全 OS で LF で取り出す (Windows で共有の file が表の bytes と一致する)
 - README の licence の節を `LicenseRef-Proprietary` の一文と問い合わせ先にする
