@@ -10,6 +10,9 @@ reason = "the guard itself: its rules and documentation spell out the flags it l
 path = "scripts/test_build_config_guard.py"
 reason = "the guard's tests: every flag appears as test data in a temporary tree"
 
+[[exclude]]
+path = "alice-law-conformance.toml"
+reason = "the conformance manifest quotes the flags in its G14 evidence and mutant text; cargo does not read it"
 
 [[exclude]]
 path = "scripts/build_flags_check.py"

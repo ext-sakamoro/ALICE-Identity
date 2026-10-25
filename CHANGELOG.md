@@ -10,6 +10,7 @@
 
 ### Added
 
+- `alice-law-conformance.toml` (ALICE-Law G1〜G14 の状態と証跡、各 pass に測った変異) と `conformance/g11-own.toml` (G11 の表のこの repository の行)
 - `semantics` module: `IDENTITY_SEMANTICS_ID` (固定の Ed25519 seed から作る device certificate、artifact signature、signed claim、`did:key`、compact JWS の bytes の digest を畳み込んだ 32 byte の識別子) / `IDENTITY_SEMANTICS_PINS` / `IDENTITY_SEMANTICS_CHECKED_AT` と、試験 `tests/semantics_golden.rs` / `tests/identity_semantics_id.rs`
 - clippy.toml に float の超越関数 (52 項目)、float の max / min / clamp、時計 (`Instant` / `SystemTime`) の禁止を足す canary は 66 項目
 - CI: release profile の試験 (x86_64 / aarch64)、float 環境 (ubuntu / macOS / Windows)、共有 file の照合、fma の否定の検査 (構文木と release IR)、byte の境界の走査、識別子の移動の検査、semver の検査
