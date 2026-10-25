@@ -10,6 +10,7 @@
 
 ### Added
 
+- `conformance/g11.toml` (ALICE-Law の `g11_table_gen.py` で生成した G11 の表) と `.github/g11-table-pin` / `scripts/g11_table.sh` (CI の clippy job と preflight で表を検査) shared-files の pin を ALICE-Law 0f545c29 に上げる
 - `alice-law-conformance.toml` (ALICE-Law G1〜G14 の状態と証跡、各 pass に測った変異) と `conformance/g11-own.toml` (G11 の表のこの repository の行)
 - `semantics` module: `IDENTITY_SEMANTICS_ID` (固定の Ed25519 seed から作る device certificate、artifact signature、signed claim、`did:key`、compact JWS の bytes の digest を畳み込んだ 32 byte の識別子) / `IDENTITY_SEMANTICS_PINS` / `IDENTITY_SEMANTICS_CHECKED_AT` と、試験 `tests/semantics_golden.rs` / `tests/identity_semantics_id.rs`
 - clippy.toml に float の超越関数 (52 項目)、float の max / min / clamp、時計 (`Instant` / `SystemTime`) の禁止を足す canary は 66 項目

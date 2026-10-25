@@ -285,6 +285,9 @@ step "ci.yml / clippy: Law boundary scan (tests, then the library's rustdoc JSON
   python3 scripts/law_boundary_scan.py --json target/doc/alice_identity.json
 )
 
+step "ci.yml / clippy: G11 table matches the declared gates"
+scripts/g11_table.sh
+
 step "ci.yml / clippy: Clippy canary data (generator tests)"
 python3 scripts/test_gen_clippy_canary_calls.py
 
