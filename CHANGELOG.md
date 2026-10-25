@@ -10,6 +10,9 @@
 
 ### Added
 
+- `semantics` module: `IDENTITY_SEMANTICS_ID` (固定の Ed25519 seed から作る device certificate、artifact signature、signed claim、`did:key`、compact JWS の bytes の digest を畳み込んだ 32 byte の識別子) / `IDENTITY_SEMANTICS_PINS` / `IDENTITY_SEMANTICS_CHECKED_AT` と、試験 `tests/semantics_golden.rs` / `tests/identity_semantics_id.rs`
+- clippy.toml に float の超越関数 (52 項目)、float の max / min / clamp、時計 (`Instant` / `SystemTime`) の禁止を足す canary は 66 項目
+- CI: release profile の試験 (x86_64 / aarch64)、float 環境 (ubuntu / macOS / Windows)、共有 file の照合、fma の否定の検査 (構文木と release IR)、byte の境界の走査、識別子の移動の検査、semver の検査
 - `Did` に `PartialOrd` / `Ord` (method、次に id の順 = `did:method:id` の文字列の順)
 - clippy の `disallowed-types` で `HashMap` / `HashSet` / `RandomState` を禁じ、canary (`scripts/clippy_canary.py`) で各項目が検出されることを CI と preflight で確かめる
 - 試験 `tests/unspecified_order.rs`: 同じ長さの経路、挿入順の違う trustee、型の違う claim 2 件で出力の順を固定
@@ -22,4 +25,5 @@
 ### Changed
 
 - `.gitattributes` で text file を全 OS で LF で取り出す (Windows で共有の file が表の bytes と一致する)
+- toolchain の pin を 1.92.0 から 1.98.1 にする (共有の検査器が読む rustdoc JSON の形式に合わせる) `RevocationList::from_bytes` の id の切り出しを `as_chunks` にする (bytes は変わらない)
 - README の licence の節を `LicenseRef-Proprietary` の一文と問い合わせ先にする

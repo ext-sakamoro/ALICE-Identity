@@ -1,0 +1,9 @@
+# scripts/semver_gate.py: the equal-version mode of alice-identity
+#
+# The crate has no cargo features, so the gate builds the default features (no default
+# features and every feature at once are the same build); consumer-features stays unset
+#
+# Cargo.toml keeps the version of the next release while changes accumulate under
+# [Unreleased]; an equal version is checked as the smallest next release, so a change that
+# needs a larger step fails on every run until Cargo.toml carries that bump
+equal-version = "next-smallest-step"

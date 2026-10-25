@@ -1,0 +1,225 @@
+# ALICE-Law G7 / G8 / G9 scope: every public function whose signature takes or returns
+# bytes, keyed by file and name, with its class and why no Law-bearing value crosses it
+# (scripts/law_boundary_scan.py)
+
+[[function]]
+file = "src/artifact.rs"
+name = "bytes"
+class = "digest"
+reason = "the 32 bytes of a payload's SHA-256 digest"
+
+[[function]]
+file = "src/artifact.rs"
+name = "context"
+class = "label"
+reason = "the printable context label an artifact signature is bound to"
+
+[[function]]
+file = "src/artifact.rs"
+name = "from_bytes"
+class = "artifact signature"
+reason = "reads the encoded artifact signature (context, digest, device certificate, Ed25519 signature)"
+
+[[function]]
+file = "src/artifact.rs"
+name = "sha256"
+class = "digest"
+reason = "a payload digest made from 32 SHA-256 bytes the caller computed"
+
+[[function]]
+file = "src/artifact.rs"
+name = "sha256_payload"
+class = "digest"
+reason = "the SHA-256 of the caller's payload bytes"
+
+[[function]]
+file = "src/artifact.rs"
+name = "sign_artifact"
+class = "artifact signature"
+reason = "an Ed25519 signature by the device key over the context and a payload digest"
+
+[[function]]
+file = "src/artifact.rs"
+name = "signature"
+class = "signature"
+reason = "the 64 bytes of the Ed25519 signature"
+
+[[function]]
+file = "src/artifact.rs"
+name = "signed_message"
+class = "signed message"
+reason = "the domain, context, digest and certificate bytes the signature covers"
+
+[[function]]
+file = "src/artifact.rs"
+name = "to_bytes"
+class = "artifact signature"
+reason = "the encoding of the artifact signature"
+
+[[function]]
+file = "src/artifact.rs"
+name = "verify_artifact"
+class = "artifact signature"
+reason = "checks an artifact signature against a master key, a payload digest and a time"
+
+[[function]]
+file = "src/base58.rs"
+name = "decode"
+class = "encoded text"
+reason = "base58btc text back to the bytes it encodes"
+
+[[function]]
+file = "src/base58.rs"
+name = "encode"
+class = "encoded text"
+reason = "the caller's bytes as base58btc text"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "contains"
+class = "certificate id"
+reason = "a 16-byte certificate id looked up in the revocation list"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "from_bytes"
+class = "revocation list"
+reason = "reads the encoded signed revocation list"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "is_revoked"
+class = "certificate id"
+reason = "a 16-byte certificate id checked against a verified list"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "issue"
+class = "revocation list"
+reason = "a list of 16-byte certificate ids signed with the master key"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "issuer_public"
+class = "key material"
+reason = "the 32-byte Ed25519 public key of the issuer"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "revoked"
+class = "certificate id"
+reason = "the revoked 16-byte certificate ids"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "signature"
+class = "signature"
+reason = "the 64 bytes of the Ed25519 signature"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "signed_message"
+class = "signed message"
+reason = "the context and body bytes the signature covers"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "to_bytes"
+class = "revocation list"
+reason = "the encoding of the signed revocation list"
+
+[[function]]
+file = "src/cert_revocation.rs"
+name = "version"
+class = "format version"
+reason = "the format version byte of the list"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "cert_id"
+class = "certificate id"
+reason = "the 16-byte id the issuer gave the certificate"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "device_public"
+class = "key material"
+reason = "the 32-byte Ed25519 public key of the device"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "from_bytes"
+class = "device certificate"
+reason = "reads the encoded device certificate"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "issue"
+class = "device certificate"
+reason = "a device key, a Noise static key, times and an id signed by the master key"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "issuer_public"
+class = "key material"
+reason = "the 32-byte Ed25519 public key of the master that signed"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "noise_static"
+class = "key material"
+reason = "the 32-byte X25519 static key of the device"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "signature"
+class = "signature"
+reason = "the 64 bytes of the Ed25519 signature"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "signed_message"
+class = "signed message"
+reason = "the context and body bytes the signature covers"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "to_bytes"
+class = "device certificate"
+reason = "the encoding of the device certificate"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "version"
+class = "format version"
+reason = "the format version byte of the certificate"
+
+[[function]]
+file = "src/jws.rs"
+name = "b64url_decode"
+class = "encoded text"
+reason = "base64url text back to the bytes it encodes"
+
+[[function]]
+file = "src/jws.rs"
+name = "b64url_encode"
+class = "encoded text"
+reason = "the caller's bytes as base64url text"
+
+[[function]]
+file = "src/jws.rs"
+name = "sign"
+class = "compact jws"
+reason = "the caller's payload signed with Ed25519 as a compact JWS"
+
+[[function]]
+file = "src/jws.rs"
+name = "verify"
+class = "compact jws"
+reason = "the payload of a compact JWS whose Ed25519 signature verifies"
+
+[[function]]
+file = "src/signed_did.rs"
+name = "canonical_bytes"
+class = "signed message"
+reason = "the canonical bytes of a claim set that a signature covers"

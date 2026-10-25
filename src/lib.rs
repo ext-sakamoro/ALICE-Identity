@@ -35,6 +35,7 @@ pub mod public_key;
 pub mod resolver;
 pub mod revocation;
 pub mod selective_disclosure;
+pub mod semantics;
 pub mod service_endpoint;
 pub mod signed_did;
 pub mod trust_graph;

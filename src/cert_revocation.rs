@@ -150,10 +150,7 @@ impl RevocationList {
         if bytes.len() - HEAD != ids_len + SIGNATURE {
             return Err(RevocationListError::Malformed("length for the count"));
         }
-        let revoked: Vec<[u8; 16]> = bytes[HEAD..HEAD + ids_len]
-            .chunks_exact(ID)
-            .map(|c| c.try_into().expect("16 bytes"))
-            .collect();
+        let revoked: Vec<[u8; 16]> = bytes[HEAD..HEAD + ids_len].as_chunks::<ID>().0.to_vec();
         if revoked.windows(2).any(|w| w[0] >= w[1]) {
             return Err(RevocationListError::Malformed("order"));
         }

@@ -273,23 +273,59 @@ step "ci.yml / msrv: Check on the declared rust-version"
 step "ci.yml / actionlint: actionlint"
 actionlint .github/workflows/*.yml
 
-step "ci.yml / test: Clippy (all targets, warnings are errors)"
+step "ci.yml / clippy: Clippy (all targets, warnings are errors)"
 relint
-( export CARGO_TERM_COLOR="always"; cargo clippy --all-targets -- -D warnings )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; cargo clippy --all-targets -- -D warnings )
 
-step "ci.yml / test: Clippy canary data (generator tests)"
+step "ci.yml / clippy: Law boundary scan (tests, then the library's rustdoc JSON)"
+(
+  export CARGO_TERM_COLOR="always" RUSTC_BOOTSTRAP="1"
+  python3 scripts/test_law_boundary_scan.py
+  cargo rustdoc --lib -- -Z unstable-options --output-format json
+  python3 scripts/law_boundary_scan.py --json target/doc/alice_identity.json
+)
+
+step "ci.yml / clippy: Clippy canary data (generator tests)"
 python3 scripts/test_gen_clippy_canary_calls.py
 
-step "ci.yml / test: Clippy canary data (generated from clippy.toml, no drift)"
+step "ci.yml / clippy: Clippy canary data (generated from clippy.toml, no drift)"
 python3 scripts/gen_clippy_canary_calls.py --check
 
-step "ci.yml / test: Clippy canary (tests)"
+step "ci.yml / clippy: Clippy canary (tests)"
 python3 scripts/test_clippy_canary.py
 
-step "ci.yml / test: Clippy canary (every planted banned call is flagged)"
+step "ci.yml / clippy: Clippy canary (every planted banned call is flagged)"
 python3 scripts/clippy_canary.py
 
-step "ci.yml / test: Doc (warnings are errors)"
+step "ci.yml / clippy: Clippy external coverage (tests, then every public function of a named module is banned or allowed)"
+python3 scripts/test_clippy_external_coverage.py
+python3 scripts/clippy_external_coverage.py
+
+step "ci.yml / clippy: Identifier moves (tests, then against the published release)"
+python3 scripts/test_id_move_check.py
+python3 scripts/id_move_check.py
+
+step "ci.yml / float-environment: run_tests.sh and build configuration guard (tests, then check)"
+python3 scripts/test_run_tests.py
+python3 scripts/test_build_config_guard.py
+python3 scripts/build_config_guard.py
+python3 scripts/test_build_flags_check.py
+
+step "ci.yml / float-environment: Shared files equal ALICE-Law's table"
+python3 scripts/test_shared_files.py
+scripts/shared_files.sh
+
+step "ci.yml / float-environment: No negated fma result (syntax tree, tests then check)"
+(
+  export CARGO_TERM_COLOR="always"
+  cargo fmt --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --check
+  cargo test --quiet --locked --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml
+  cargo run --quiet --locked --release --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --root .
+  python3 scripts/test_changed_paths.py
+  python3 scripts/changed_paths.py sync
+)
+
+step "ci.yml / doc: Doc (warnings are errors)"
 ( export CARGO_TERM_COLOR="always" RUSTDOCFLAGS="-Dwarnings"; cargo doc --no-deps )
 
 step "security-audit.yml / audit: Resolve"
@@ -320,13 +356,36 @@ fi
 
 step "ci.yml / test: Test"
 (
-  export CARGO_TERM_COLOR="always"
+  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"
   set -o pipefail
   cargo test 2>&1 | tee test.log
   passed=$(grep -E '^test result: ' test.log | awk '{s += $4} END {print s + 0}')
   echo "passed: ${passed}"
   if [ "${passed}" -eq 0 ]; then echo "::error::no test passed"; exit 1; fi
 )
+
+step "ci.yml / test: Law tests (semantics goldens and identifier, hash order)"
+scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
+
+step "ci.yml / release: Test (release), Law tests (release)"
+cargo test --release
+scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
+
+step "ci.yml / float-environment: Float environment (debug and release)"
+scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
+scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_environment
+
+step "ci.yml / float-environment: Effective rustc flags (release, library)"
+python3 scripts/build_flags_check.py -- cargo check --release --lib
+
+step "semver-checks.yml / semver-checks: semver gate (tests), release baseline (tests), semver gate"
+python3 scripts/test_semver_gate.py
+python3 scripts/test_release_baseline.py
+python3 scripts/semver_gate.py --config .github/semver-gate.toml --target-dir target/semver
+
+step "g3-ir.yml / ir: probe tests + no negated fma result in alice-identity's release IR (host build; the per-target floors are checked in CI)"
+python3 scripts/test_fneg_fma_ir_check.py
+CARGO_TARGET_DIR=target/g3-ir python3 scripts/fneg_fma_ir_check.py --package alice-identity --all-features --findings-only
 
 step "security-audit.yml / audit: Run cargo audit"
 (

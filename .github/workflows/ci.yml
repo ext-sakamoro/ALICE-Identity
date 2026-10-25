@@ -1,5 +1,9 @@
 name: CI
 
+# Shared ALICE-* CI layout: test / release / float-environment / clippy / fmt / msrv / doc /
+# actionlint. The crate has no cargo features, no float arithmetic and no target-specific code,
+# so every job builds the one configuration there is.
+
 on:
   push:
     # ci/** runs the whole workflow on a branch before it is landed on main
@@ -14,8 +18,171 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
+  test:
+    # debug on x86_64 (ubuntu) and aarch64 (macOS); ALICE-Law G4 checks the recorded-bit
+    # goldens on both
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # every test target must run and pass; a run that passes no test fails (it compared nothing)
+      - name: Test
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee test.log
+          passed=$(grep -E '^test result: ' test.log | awk '{s += $4} END {print s + 0}')
+          echo "passed: ${passed}"
+          if [ "${passed}" -eq 0 ]; then echo "::error::no test passed"; exit 1; fi
+      - name: Law tests (semantics goldens and identifier, hash order)
+        run: scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
+
+  release:
+    # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
+    # aarch64 (macOS); scripts/run_tests.sh fails a binary that ran fewer tests than named
+    name: Release profile tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-tests
+      - name: Test (release)
+        run: cargo test --release
+      - name: Law tests (release)
+        run: scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
+
+  float-environment:
+    # ALICE-Law G14 on each OS: round-to-nearest-even and no flush-to-zero at run time in
+    # both profiles (scripts/run_tests.sh float_environment=2 fails unless both tests
+    # passed), the static build configuration guard, and on ubuntu / macOS the flags cargo
+    # really passes to rustc, read from `-v` in a fresh target directory
+    # (scripts/build_flags_check.py)
+    name: Float environment (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Float environment (debug and release)
+        run: |
+          scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
+          scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_environment
+      - name: run_tests.sh and build configuration guard (tests, then check)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_run_tests.py
+          "$PY" scripts/test_build_config_guard.py
+          "$PY" scripts/build_config_guard.py
+          "$PY" scripts/test_build_flags_check.py
+      # ALICE-Law G11 (c): the files shared with the other crates are the bytes ALICE-Law's
+      # table records (table and checker fetched at .github/shared-files-pin, both SHA-256
+      # pinned); a difference, an unlisted shared path or nothing compared fails
+      - name: Shared files equal ALICE-Law's table
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_shared_files.py
+          scripts/shared_files.sh
+      - name: Effective rustc flags (release, library)
+        if: runner.os != 'Windows'
+        run: python3 scripts/build_flags_check.py -- cargo check --release --lib
+      # ALICE-Law G3, syntax-tree pre-check (tools/no-outer-fneg-of-fma, byte-identical to
+      # ALICE-LOL's): its own tests, then the check over src/ tests/ examples/ benches/ with
+      # the exact fma-call counts of scripts/no-outer-fneg-of-fma-allowlist.toml (0 here);
+      # the IR half is .github/workflows/g3-ir.yml
+      - name: No negated fma result (syntax tree, tests then check)
+        run: |
+          cargo fmt --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --check
+          cargo test --quiet --locked --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml
+          cargo run --quiet --locked --release --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --root .
+          # scripts/changed_paths.py decides whether the path-filtered workflows run; its own
+          # tests, then the trigger lint (no on.push paths off main, each pattern file equals
+          # its workflow's pull_request paths, the gate job needs every job)
+          python3 scripts/test_changed_paths.py
+          python3 scripts/changed_paths.py sync
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # the release tags: scripts/id_move_check.py compares with the newest one
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (all targets, warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+      # ALICE-Law G7 / G8 / G9 scope: no Law-bearing value crosses a byte boundary (every
+      # public function carrying bytes is in scripts/law_boundary_table.toml with its class);
+      # read from the rustdoc JSON of the library
+      - name: Law boundary scan (tests, then the library's rustdoc JSON)
+        env:
+          RUSTC_BOOTSTRAP: "1"
+        run: |
+          python3 scripts/test_law_boundary_scan.py
+          cargo rustdoc --lib -- -Z unstable-options --output-format json
+          python3 scripts/law_boundary_scan.py --json target/doc/alice_identity.json
+      # the lists in clippy.toml (ALICE-Law G1, G2, G10, G13) only gate anything if clippy
+      # flags a use of them: a throwaway crate with the same clippy.toml plants one banned
+      # use per row of scripts/clippy_canary_calls.tsv (0 rows fail). The rows are generated
+      # from clippy.toml, one per disallowed-methods / disallowed-types entry; --check fails
+      # when the file has drifted from clippy.toml
+      - name: Clippy canary data (generator tests)
+        run: python3 scripts/test_gen_clippy_canary_calls.py
+      - name: Clippy canary data (generated from clippy.toml, no drift)
+        run: python3 scripts/gen_clippy_canary_calls.py --check
+      - name: Clippy canary (tests)
+        run: python3 scripts/test_clippy_canary.py
+      - name: Clippy canary (every planted banned call is flagged)
+        run: python3 scripts/clippy_canary.py
+      # a ban on an external crate's function covers that one path: every public function
+      # of each external module the list names must be banned or allowed with a reason
+      # (none is named today: the crate depends on no entropy crate)
+      - name: Clippy external coverage (tests)
+        run: python3 scripts/test_clippy_external_coverage.py
+      - name: Clippy external coverage (every public function of a named module is banned or allowed)
+        run: python3 scripts/clippy_external_coverage.py
+      # G9: an identifier (IDENTITY_SEMANTICS_ID) moves only with a breaking version, with
+      # the released value in its previous list (when it has one) and both values named in
+      # CHANGELOG.md (scripts/id_move_check.py, shared with the other ALICE crates). A
+      # registry that cannot be read fails on main and warns on ci/ branches and PRs
+      - name: Identifier moves (tests)
+        run: python3 scripts/test_id_move_check.py
+      - name: Identifier moves (the release compared with)
+        id: id-base
+        run: echo "crate=$(python3 scripts/id_move_check.py --print-base)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cargo/registry/cache/*/${{ steps.id-base.outputs.crate }}.crate
+          key: id-move-${{ steps.id-base.outputs.crate }}
+      - name: Identifier moves (against the published release)
+        run: python3 scripts/id_move_check.py
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -40,6 +207,18 @@ jobs:
           case "$v" in "cargo 1.88."*) ;; *) echo "::error::not cargo 1.88: $v"; exit 1 ;; esac
           cargo +1.88 check --all-features
 
+  doc:
+    name: Doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Doc (warnings are errors)
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
@@ -50,41 +229,3 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
-
-
-  test:
-    name: Test, clippy and doc
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: Clippy (all targets, warnings are errors)
-        run: cargo clippy --all-targets -- -D warnings
-      # the lists in clippy.toml (ALICE-Law G13) only gate anything if clippy
-      # flags a use of them: a throwaway crate with the same clippy.toml plants
-      # one banned use per row of scripts/clippy_canary_calls.tsv (0 rows
-      # fail). The rows are generated from clippy.toml, one per
-      # disallowed-methods / disallowed-types entry; --check fails when the file
-      # has drifted from clippy.toml
-      - name: Clippy canary data (generator tests)
-        run: python3 scripts/test_gen_clippy_canary_calls.py
-      - name: Clippy canary data (generated from clippy.toml, no drift)
-        run: python3 scripts/gen_clippy_canary_calls.py --check
-      - name: Clippy canary (tests)
-        run: python3 scripts/test_clippy_canary.py
-      - name: Clippy canary (every planted banned call is flagged)
-        run: python3 scripts/clippy_canary.py
-      # every test target must run and pass; a run that passes no test fails (it compared nothing)
-      - name: Test
-        run: |
-          set -o pipefail
-          cargo test 2>&1 | tee test.log
-          passed=$(grep -E '^test result: ' test.log | awk '{s += $4} END {print s + 0}')
-          echo "passed: ${passed}"
-          if [ "${passed}" -eq 0 ]; then echo "::error::no test passed"; exit 1; fi
-      - name: Doc (warnings are errors)
-        run: cargo doc --no-deps
-        env:
-          RUSTDOCFLAGS: "-Dwarnings"
