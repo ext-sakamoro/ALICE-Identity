@@ -147,6 +147,11 @@ jobs:
           python3 scripts/test_law_boundary_scan.py
           cargo rustdoc --lib -- -Z unstable-options --output-format json
           python3 scripts/law_boundary_scan.py --json target/doc/alice_identity.json
+      # ALICE-Law G11: every gate the manifest declares pass has a row in conformance/g11.toml naming its
+      # checker, the canary it must flag and the test that fails when it compared nothing (ALICE-Law's
+      # checker fetched at .github/g11-table-pin, SHA-256 pinned; 0 rows compared fails)
+      - name: G11 table matches the declared gates
+        run: scripts/g11_table.sh
       # the lists in clippy.toml (ALICE-Law G1, G2, G10, G13) only gate anything if clippy
       # flags a use of them: a throwaway crate with the same clippy.toml plants one banned
       # use per row of scripts/clippy_canary_calls.tsv (0 rows fail). The rows are generated
