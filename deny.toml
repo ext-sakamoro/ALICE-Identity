@@ -40,6 +40,11 @@ allow = [
 name = "alice-identity"
 allow = ["LicenseRef-Proprietary"]
 
+# alice-sign is proprietary from its pinned commit on (LicenseRef-Proprietary, the same rights holder)
+[[licenses.exceptions]]
+name = "alice-sign"
+allow = ["LicenseRef-Proprietary"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"   # path dependencies have no registry version

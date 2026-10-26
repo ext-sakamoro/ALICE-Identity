@@ -16,10 +16,12 @@ use crate::presentation::*;
 use crate::public_key::*;
 use crate::resolver::*;
 use crate::revocation::*;
-use crate::selective_disclosure::*;
 use crate::service_endpoint::*;
 use crate::trust_graph::*;
 use crate::verifier::*;
+use alice_sign::cred::claims::Claim;
+use alice_sign::cred::{KeyId, NoRevocations, RevokedSet};
+use alice_sign::{KeyPair, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 
 // -- helpers --
@@ -36,20 +38,45 @@ fn did_carol() -> Did {
     Did::new("alice", "carol003")
 }
 
-fn sample_credential(issuer: &Did, subject: &Did) -> VerifiableCredential {
-    let mut claims = BTreeMap::new();
-    claims.insert("name".to_owned(), "Alice".to_owned());
-    claims.insert("age".to_owned(), "30".to_owned());
-    claims.insert("active".to_owned(), "true".to_owned());
-    VerifiableCredential {
-        context: "https://www.w3.org/2018/credentials/v1".to_owned(),
-        credential_type: "IdentityCredential".to_owned(),
-        issuer: issuer.clone(),
-        subject: subject.clone(),
-        issued_at: 1000,
-        expires_at: Some(5000),
-        claims,
-        proof: vec![1, 2, 3, 4],
+fn issuer_key(seed: u8) -> KeyPair {
+    KeyPair::from_seed([seed; 32])
+}
+
+/// A credential of `issuer` about `subject`: three claims, valid in [1000, 5000)
+fn sample_credential(issuer: &KeyPair, subject: &Did) -> VerifiableCredential {
+    VerifiableCredential::issue(
+        issuer,
+        &CredentialTerms {
+            credential_type: "IdentityCredential",
+            subject,
+            issued_at: 1000,
+            expires_at: Some(5000),
+        },
+        vec![
+            Claim::new("name", "Alice", [1; 32]),
+            Claim::new("age", "30", [2; 32]),
+            Claim::new("active", "true", [3; 32]),
+        ],
+        [[4; 32], [5; 32]],
+    )
+    .unwrap()
+}
+
+fn trusting(issuer: &KeyPair) -> CredentialVerifier {
+    let mut v = CredentialVerifier::new();
+    v.add_trusted_issuer(Did::key_ed25519(&issuer.public()));
+    v
+}
+
+fn all_shown(vc: &VerifiableCredential) -> CredentialPresentation {
+    vc.present(&["name", "age", "active"]).unwrap()
+}
+
+struct RevokeKey(KeyId);
+
+impl RevokedSet for RevokeKey {
+    fn is_revoked(&self, key_id: &KeyId) -> bool {
+        *key_id == self.0
     }
 }
 
@@ -212,27 +239,60 @@ fn did_document_multiple_services() {
 // VerifiableCredential
 // -----------------------------------------------------------------------
 
+// -----------------------------------------------------------------------
+// VerifiableCredential
+// -----------------------------------------------------------------------
+
 #[test]
 fn credential_creation() {
-    let vc = sample_credential(&did_alice(), &did_bob());
-    assert_eq!(vc.issuer, did_alice());
-    assert_eq!(vc.subject, did_bob());
-    assert_eq!(vc.claims.len(), 3);
+    let key = issuer_key(7);
+    let vc = sample_credential(&key, &did_bob());
+    assert_eq!(vc.issuer, Did::key_ed25519(&key.public()));
+    assert_eq!(vc.claims().len(), 3);
+    assert_eq!(vc.claims().get("name").unwrap(), "Alice");
 }
 
 #[test]
 fn credential_no_expiry() {
-    let vc = VerifiableCredential {
-        context: String::new(),
-        credential_type: String::new(),
-        issuer: did_alice(),
-        subject: did_bob(),
-        issued_at: 0,
-        expires_at: None,
-        claims: BTreeMap::new(),
-        proof: vec![1],
-    };
-    assert!(vc.expires_at.is_none());
+    let key = issuer_key(7);
+    let vc = VerifiableCredential::issue(
+        &key,
+        &CredentialTerms {
+            credential_type: "T",
+            subject: &did_bob(),
+            issued_at: 0,
+            expires_at: None,
+        },
+        vec![],
+        [[4; 32], [5; 32]],
+    )
+    .unwrap();
+    let got = trusting(&key)
+        .verify(&vc.present(&[]).unwrap(), 999_999, &NoRevocations)
+        .unwrap();
+    assert!(got.claims.is_empty());
+    assert_eq!(got.subject, did_bob());
+}
+
+#[test]
+fn credential_reserved_claim_names_are_refused() {
+    for name in [SUBJECT_CLAIM, TYPE_CLAIM] {
+        let r = VerifiableCredential::issue(
+            &issuer_key(7),
+            &CredentialTerms {
+                credential_type: "T",
+                subject: &did_bob(),
+                issued_at: 0,
+                expires_at: None,
+            },
+            vec![Claim::new(name, "x", [1; 32])],
+            [[4; 32], [5; 32]],
+        );
+        assert!(
+            matches!(r, Err(IdentityError::SchemaValidation(_))),
+            "{name}"
+        );
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -241,10 +301,10 @@ fn credential_no_expiry() {
 
 #[test]
 fn presentation_creation() {
+    let vc = sample_credential(&issuer_key(7), &did_alice());
     let vp = VerifiablePresentation {
         holder: did_alice(),
-        credentials: vec![sample_credential(&did_bob(), &did_alice())],
-        proof: vec![9, 8, 7],
+        credentials: vec![all_shown(&vc)],
     };
     assert_eq!(vp.holder, did_alice());
     assert_eq!(vp.credentials.len(), 1);
@@ -255,10 +315,9 @@ fn presentation_multiple_credentials() {
     let vp = VerifiablePresentation {
         holder: did_alice(),
         credentials: vec![
-            sample_credential(&did_bob(), &did_alice()),
-            sample_credential(&did_carol(), &did_alice()),
+            all_shown(&sample_credential(&issuer_key(7), &did_alice())),
+            all_shown(&sample_credential(&issuer_key(8), &did_alice())),
         ],
-        proof: vec![1],
     };
     assert_eq!(vp.credentials.len(), 2);
 }
@@ -269,62 +328,134 @@ fn presentation_multiple_credentials() {
 
 #[test]
 fn verifier_valid() {
-    let mut v = CredentialVerifier::new();
-    v.add_trusted_issuer(did_alice());
-    let vc = sample_credential(&did_alice(), &did_bob());
-    assert!(v.verify(&vc, 2000).is_ok());
+    let key = issuer_key(7);
+    let vc = sample_credential(&key, &did_bob());
+    let got = trusting(&key)
+        .verify(&all_shown(&vc), 2000, &NoRevocations)
+        .unwrap();
+    assert_eq!(got.issuer, Did::key_ed25519(&key.public()));
+    assert_eq!(got.subject, did_bob());
+    assert_eq!(got.credential_type, "IdentityCredential");
+    assert_eq!(got.claims, vc.claims());
+}
+
+// a shown claim whose value was changed after issuing is not covered by the signature
+#[test]
+fn verifier_tampered_claim() {
+    let key = issuer_key(7);
+    let mut p = all_shown(&sample_credential(&key, &did_bob()));
+    let item = p
+        .disclosure
+        .items
+        .iter_mut()
+        .find(|i| i.claim.name == "age")
+        .unwrap();
+    item.claim.value = "99".to_owned();
+    assert_eq!(
+        trusting(&key).verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::InvalidSignature)
+    );
+}
+
+// a credential signed by another key, presented under the trusted issuer's DID
+#[test]
+fn verifier_other_key() {
+    let trusted = issuer_key(7);
+    let mut p = all_shown(&sample_credential(&issuer_key(8), &did_bob()));
+    p.issuer = Did::key_ed25519(&trusted.public());
+    assert_eq!(
+        trusting(&trusted).verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::InvalidSignature)
+    );
 }
 
 #[test]
-fn verifier_empty_proof() {
-    let mut v = CredentialVerifier::new();
-    v.add_trusted_issuer(did_alice());
-    let mut vc = sample_credential(&did_alice(), &did_bob());
-    vc.proof.clear();
-    assert_eq!(v.verify(&vc, 2000), Err(IdentityError::InvalidSignature));
+fn verifier_empty_signature() {
+    let key = issuer_key(7);
+    let mut p = all_shown(&sample_credential(&key, &did_bob()));
+    p.signed.signature = Signature([0; 64]);
+    assert_eq!(
+        trusting(&key).verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::InvalidSignature)
+    );
 }
 
 #[test]
 fn verifier_expired() {
-    let mut v = CredentialVerifier::new();
-    v.add_trusted_issuer(did_alice());
-    let vc = sample_credential(&did_alice(), &did_bob());
-    assert_eq!(v.verify(&vc, 9999), Err(IdentityError::CredentialExpired));
+    let key = issuer_key(7);
+    let p = all_shown(&sample_credential(&key, &did_bob()));
+    assert_eq!(
+        trusting(&key).verify(&p, 9999, &NoRevocations),
+        Err(IdentityError::CredentialExpired)
+    );
 }
 
 #[test]
 fn verifier_untrusted_issuer() {
-    let v = CredentialVerifier::new();
-    let vc = sample_credential(&did_alice(), &did_bob());
+    let p = all_shown(&sample_credential(&issuer_key(7), &did_bob()));
     assert!(matches!(
-        v.verify(&vc, 2000),
+        CredentialVerifier::new().verify(&p, 2000, &NoRevocations),
         Err(IdentityError::UntrustedIssuer(_))
     ));
 }
 
 #[test]
-fn verifier_no_expiry_ok() {
+fn verifier_issuer_that_is_not_a_did_key() {
     let mut v = CredentialVerifier::new();
     v.add_trusted_issuer(did_alice());
-    let mut vc = sample_credential(&did_alice(), &did_bob());
-    vc.expires_at = None;
-    assert!(v.verify(&vc, 999_999).is_ok());
+    let mut p = all_shown(&sample_credential(&issuer_key(7), &did_bob()));
+    p.issuer = did_alice();
+    assert!(matches!(
+        v.verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::InvalidDid(_))
+    ));
+}
+
+// the window is half-open [issued_at, expires_at): the expiry second itself is expired
+#[test]
+fn verifier_exact_expiry_boundary() {
+    let key = issuer_key(7);
+    let v = trusting(&key);
+    let p = all_shown(&sample_credential(&key, &did_bob()));
+    assert!(v.verify(&p, 4999, &NoRevocations).is_ok());
+    assert_eq!(
+        v.verify(&p, 5000, &NoRevocations),
+        Err(IdentityError::CredentialExpired)
+    );
+    assert!(v.verify(&p, 1000, &NoRevocations).is_ok());
+    assert_eq!(
+        v.verify(&p, 999, &NoRevocations),
+        Err(IdentityError::CredentialNotYetValid)
+    );
 }
 
 #[test]
-fn verifier_exact_expiry_boundary() {
-    let mut v = CredentialVerifier::new();
-    v.add_trusted_issuer(did_alice());
-    let vc = sample_credential(&did_alice(), &did_bob());
-    // expires_at = 5000, current_time = 5000 => NOT expired (only > is expired)
-    assert!(v.verify(&vc, 5000).is_ok());
+fn verifier_revoked_issuer_key() {
+    let key = issuer_key(7);
+    let p = all_shown(&sample_credential(&key, &did_bob()));
+    assert!(matches!(
+        trusting(&key).verify(&p, 2000, &RevokeKey(KeyId::of(&key.public()))),
+        Err(IdentityError::CredentialRevoked(_))
+    ));
+}
+
+// the subject is shown with every presentation; one with the subject taken out is refused
+#[test]
+fn verifier_subject_must_be_shown() {
+    let key = issuer_key(7);
+    let mut p = all_shown(&sample_credential(&key, &did_bob()));
+    p.disclosure.items.retain(|i| i.claim.name != SUBJECT_CLAIM);
+    assert_eq!(
+        trusting(&key).verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::ClaimNotFound(SUBJECT_CLAIM.to_owned()))
+    );
 }
 
 #[test]
 fn verifier_default() {
     let v = CredentialVerifier::default();
-    let vc = sample_credential(&did_alice(), &did_bob());
-    assert!(v.verify(&vc, 0).is_err());
+    let p = all_shown(&sample_credential(&issuer_key(7), &did_bob()));
+    assert!(v.verify(&p, 2000, &NoRevocations).is_err());
 }
 
 // -----------------------------------------------------------------------
@@ -711,44 +842,65 @@ fn schema_default() {
 
 #[test]
 fn disclosure_subset() {
-    let vc = sample_credential(&did_alice(), &did_bob());
-    let disclosed = SelectiveDisclosure::disclose(&vc, &["name"]).unwrap();
-    assert_eq!(disclosed.claims.len(), 1);
-    assert_eq!(disclosed.claims.get("name").unwrap(), "Alice");
+    let key = issuer_key(7);
+    let vc = sample_credential(&key, &did_bob());
+    let got = trusting(&key)
+        .verify(&vc.present(&["name"]).unwrap(), 2000, &NoRevocations)
+        .unwrap();
+    assert_eq!(got.claims.len(), 1);
+    assert_eq!(got.claims.get("name").unwrap(), "Alice");
+}
+
+#[test]
+fn disclosure_hides_the_other_claims() {
+    let vc = sample_credential(&issuer_key(7), &did_bob());
+    let p = vc.present(&["name"]).unwrap();
+    let names: Vec<&str> = p
+        .disclosure
+        .items
+        .iter()
+        .map(|i| i.claim.name.as_str())
+        .collect();
+    assert_eq!(names, vec![SUBJECT_CLAIM, TYPE_CLAIM, "name"]);
 }
 
 #[test]
 fn disclosure_all_fields() {
-    let vc = sample_credential(&did_alice(), &did_bob());
-    let disclosed = SelectiveDisclosure::disclose(&vc, &["name", "age", "active"]).unwrap();
-    assert_eq!(disclosed.claims.len(), 3);
+    let key = issuer_key(7);
+    let vc = sample_credential(&key, &did_bob());
+    let got = trusting(&key)
+        .verify(&all_shown(&vc), 2000, &NoRevocations)
+        .unwrap();
+    assert_eq!(got.claims.len(), 3);
 }
 
 #[test]
 fn disclosure_empty_fields() {
-    let vc = sample_credential(&did_alice(), &did_bob());
-    let disclosed = SelectiveDisclosure::disclose(&vc, &[]).unwrap();
-    assert!(disclosed.claims.is_empty());
+    let key = issuer_key(7);
+    let vc = sample_credential(&key, &did_bob());
+    let got = trusting(&key)
+        .verify(&vc.present(&[]).unwrap(), 2000, &NoRevocations)
+        .unwrap();
+    assert!(got.claims.is_empty());
+    assert_eq!(got.subject, did_bob());
 }
 
 #[test]
 fn disclosure_missing_field() {
-    let vc = sample_credential(&did_alice(), &did_bob());
+    let vc = sample_credential(&issuer_key(7), &did_bob());
     assert!(matches!(
-        SelectiveDisclosure::disclose(&vc, &["nonexistent"]),
+        vc.present(&["nonexistent"]),
         Err(IdentityError::ClaimNotFound(_))
     ));
 }
 
 #[test]
 fn disclosure_preserves_metadata() {
-    let vc = sample_credential(&did_alice(), &did_bob());
-    let disclosed = SelectiveDisclosure::disclose(&vc, &["name"]).unwrap();
-    assert_eq!(disclosed.issuer, vc.issuer);
-    assert_eq!(disclosed.subject, vc.subject);
-    assert_eq!(disclosed.issued_at, vc.issued_at);
-    assert_eq!(disclosed.expires_at, vc.expires_at);
-    assert_eq!(disclosed.proof, vc.proof);
+    let vc = sample_credential(&issuer_key(7), &did_bob());
+    let p = vc.present(&["name"]).unwrap();
+    assert_eq!(p.issuer, vc.issuer);
+    assert_eq!(p.signed.signature, vc.signed.signature);
+    assert_eq!(p.signed.window, vc.signed.window);
 }
 
 // -----------------------------------------------------------------------
@@ -866,30 +1018,34 @@ fn integration_full_identity_flow() {
     let mut trust = TrustGraph::new();
     trust.add_trust(&holder, &issuer);
 
-    // 4. Issue credential
-    let mut claims = BTreeMap::new();
-    claims.insert("degree".to_owned(), "PhD".to_owned());
-    claims.insert("field".to_owned(), "Computer Science".to_owned());
-    let vc = VerifiableCredential {
-        context: "https://www.w3.org/2018/credentials/v1".to_owned(),
-        credential_type: "DegreeCredential".to_owned(),
-        issuer: issuer.clone(),
-        subject: holder.clone(),
-        issued_at: 2000,
-        expires_at: Some(10000),
-        claims,
-        proof: vec![1, 2, 3],
-    };
+    // 4. Issue credential (the issuer signs with the key of its did:key)
+    let issuer_signer = issuer_key(9);
+    let signer_did = Did::key_ed25519(&issuer_signer.public());
+    let vc = VerifiableCredential::issue(
+        &issuer_signer,
+        &CredentialTerms {
+            credential_type: "DegreeCredential",
+            subject: &holder,
+            issued_at: 2000,
+            expires_at: Some(10000),
+        },
+        vec![
+            Claim::new("degree", "PhD", [1; 32]),
+            Claim::new("field", "Computer Science", [2; 32]),
+        ],
+        [[3; 32], [4; 32]],
+    )
+    .unwrap();
 
-    // 5. Verify
+    // 5. Verify, showing only the degree (6. selective disclosure)
     let mut verifier = CredentialVerifier::new();
-    verifier.add_trusted_issuer(issuer.clone());
-    assert!(verifier.verify(&vc, 3000).is_ok());
-
-    // 6. Selective disclosure
-    let disclosed = SelectiveDisclosure::disclose(&vc, &["degree"]).unwrap();
-    assert_eq!(disclosed.claims.len(), 1);
-    assert!(!disclosed.claims.contains_key("field"));
+    verifier.add_trusted_issuer(signer_did);
+    let got = verifier
+        .verify(&vc.present(&["degree"]).unwrap(), 3000, &NoRevocations)
+        .unwrap();
+    assert_eq!(got.claims.len(), 1);
+    assert!(!got.claims.contains_key("field"));
+    assert_eq!(got.subject, holder);
 
     // 7. Trust path
     assert!(trust.is_trusted(&holder, &issuer));
@@ -914,8 +1070,8 @@ fn integration_schema_and_credential() {
     schema.add_required_field("age", "integer");
     schema.add_optional_field("email", "string");
 
-    let vc = sample_credential(&did_alice(), &did_bob());
-    assert!(schema.validate(&vc.claims).is_ok());
+    let vc = sample_credential(&issuer_key(7), &did_bob());
+    assert!(schema.validate(&vc.claims()).is_ok());
 }
 
 #[test]
@@ -957,11 +1113,12 @@ fn did_inequality_method() {
 
 #[test]
 fn verifier_multiple_trusted_issuers() {
+    let (a, b) = (issuer_key(7), issuer_key(8));
     let mut v = CredentialVerifier::new();
-    v.add_trusted_issuer(did_alice());
-    v.add_trusted_issuer(did_bob());
-    let vc = sample_credential(&did_bob(), &did_carol());
-    assert!(v.verify(&vc, 2000).is_ok());
+    v.add_trusted_issuer(Did::key_ed25519(&a.public()));
+    v.add_trusted_issuer(Did::key_ed25519(&b.public()));
+    let p = all_shown(&sample_credential(&b, &did_carol()));
+    assert!(v.verify(&p, 2000, &NoRevocations).is_ok());
 }
 
 #[test]
