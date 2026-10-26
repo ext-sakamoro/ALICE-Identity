@@ -7,8 +7,8 @@ Decentralized identity (DID) — self-sovereign identity as DAG trust graphs.
 - **W3C DID**: Parse, validate, and resolve Decentralized Identifiers
 - **did:key (Ed25519)**: `Did::key_ed25519` and `Did::ed25519_public_key` convert between an Ed25519 public key and its `did:key` identifier (base58btc, multicodec `0xed 0x01`)
 - **DID Documents**: Public keys, service endpoints, lifecycle management
-- **Verifiable Credentials**: Issue, verify, and present credentials
-- **Selective Disclosure**: Reveal only specified claims from a credential
+- **Verifiable Credentials**: Issue, verify, and present credentials signed with the Ed25519 key of the issuer's `did:key`, valid in `[issued_at, expires_at)`
+- **Selective Disclosure**: Reveal only specified claims; the issuer's signature still covers each shown claim (salted Merkle commitment from alice-sign `cred::claims`)
 - **Trust Graphs**: DAG-based transitive trust with path discovery
 - **Revocation Registry**: Credential revocation tracking
 - **Claim Schemas**: Define and validate credential claim structures

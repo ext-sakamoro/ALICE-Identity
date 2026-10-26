@@ -10,6 +10,7 @@ repository = "https://github.com/ext-sakamoro/ALICE-Identity"
 authors = ["Moroya Sakamoto"]
 
 [dependencies]
-# Ed25519 and SHA-256 come from alice-sign (MIT OR Apache-2.0), taken by git at a full commit
-# until it is published; the git and rev keys go away then
-alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "8a1b00d800082187a8693732a9ffb806c98814e7" }
+# Ed25519, SHA-256 and the signed credential with its selective disclosure (feature cred) come from
+# alice-sign (LicenseRef-Proprietary), taken by git at a full commit until it is published; the git
+# and rev keys go away then
+alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "bb79209e376ec3989bf721f48d5894032a221e8b", features = ["cred"] }

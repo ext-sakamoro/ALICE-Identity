@@ -135,6 +135,12 @@ class = "format version"
 reason = "the format version byte of the list"
 
 [[function]]
+file = "src/credential.rs"
+name = "issue"
+class = "signed message"
+reason = "the 32-byte salts of the reserved @subject and @type claims; the credential it returns is alice-sign's SignedCredential, whose cred SEMANTICS_ID verify_at checks first"
+
+[[function]]
 file = "src/device_cert.rs"
 name = "cert_id"
 class = "certificate id"
