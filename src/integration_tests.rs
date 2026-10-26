@@ -276,7 +276,7 @@ fn credential_no_expiry() {
 
 #[test]
 fn credential_reserved_claim_names_are_refused() {
-    for name in [SUBJECT_CLAIM, TYPE_CLAIM] {
+    for name in [SUBJECT_CLAIM, TYPE_CLAIM, "@issued_at"] {
         let r = VerifiableCredential::issue(
             &issuer_key(7),
             &CredentialTerms {
@@ -298,6 +298,28 @@ fn credential_reserved_claim_names_are_refused() {
 // -----------------------------------------------------------------------
 // VerifiablePresentation
 // -----------------------------------------------------------------------
+
+// a window that ends at or before it starts is never valid: refused when issuing
+#[test]
+fn credential_that_would_never_be_valid_is_refused() {
+    for expires_at in [1000, 999] {
+        let r = VerifiableCredential::issue(
+            &issuer_key(7),
+            &CredentialTerms {
+                credential_type: "T",
+                subject: &did_bob(),
+                issued_at: 1000,
+                expires_at: Some(expires_at),
+            },
+            vec![],
+            [[4; 32], [5; 32]],
+        );
+        assert!(
+            matches!(r, Err(IdentityError::SchemaValidation(_))),
+            "{expires_at}"
+        );
+    }
+}
 
 #[test]
 fn presentation_creation() {
@@ -351,10 +373,10 @@ fn verifier_tampered_claim() {
         .find(|i| i.claim.name == "age")
         .unwrap();
     item.claim.value = "99".to_owned();
-    assert_eq!(
+    assert!(matches!(
         trusting(&key).verify(&p, 2000, &NoRevocations),
-        Err(IdentityError::InvalidSignature)
-    );
+        Err(IdentityError::DisclosureRefused(_))
+    ));
 }
 
 // a credential signed by another key, presented under the trusted issuer's DID
@@ -448,6 +470,22 @@ fn verifier_subject_must_be_shown() {
     assert_eq!(
         trusting(&key).verify(&p, 2000, &NoRevocations),
         Err(IdentityError::ClaimNotFound(SUBJECT_CLAIM.to_owned()))
+    );
+}
+
+// a credential of another credential format is reported as such, naming both identifiers
+#[test]
+fn verifier_other_credential_format() {
+    let key = issuer_key(7);
+    let mut p = all_shown(&sample_credential(&key, &did_bob()));
+    let expected = p.signed.semantics_id;
+    p.signed.semantics_id = [0x5a; 32];
+    assert_eq!(
+        trusting(&key).verify(&p, 2000, &NoRevocations),
+        Err(IdentityError::UnsupportedCredentialFormat {
+            stored: [0x5a; 32],
+            expected,
+        })
     );
 }
 

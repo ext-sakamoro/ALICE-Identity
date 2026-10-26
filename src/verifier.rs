@@ -44,11 +44,16 @@ impl CredentialVerifier {
     /// Ed25519 key of the issuer's `did:key`, `now` is inside its window `[issued_at, expires_at)`,
     /// the signer is not in `revoked`, and every shown claim is covered by the signature.
     ///
+    /// Revocation is per signing key (`revoked` is asked about the issuer key's id): revoking one
+    /// credential means revoking the key that issued it.
+    ///
     /// # Errors
     /// `UntrustedIssuer` for an issuer not added; `InvalidDid` for an issuer DID that is not an
     /// Ed25519 `did:key`; `CredentialExpired` at or after `expires_at`, `CredentialNotYetValid`
-    /// before `issued_at`; `CredentialRevoked` for a revoked signer key; `InvalidSignature` for a
-    /// signature by another key, a changed credential or a shown claim it does not cover;
+    /// before `issued_at`; `CredentialRevoked` for a revoked signer key;
+    /// `UnsupportedCredentialFormat` for a credential of another credential format;
+    /// `InvalidSignature` for a signature by another key or a changed credential;
+    /// `DisclosureRefused` for shown claims the signature does not cover;
     /// `ClaimNotFound` when the subject or type is not shown.
     pub fn verify(
         &self,
@@ -68,6 +73,9 @@ impl CredentialVerifier {
                 CredError::Expired => IdentityError::CredentialExpired,
                 CredError::NotYetValid => IdentityError::CredentialNotYetValid,
                 CredError::Revoked => IdentityError::CredentialRevoked(issuer.to_string()),
+                CredError::SemanticsMismatch { stored, expected } => {
+                    IdentityError::UnsupportedCredentialFormat { stored, expected }
+                }
                 _ => IdentityError::InvalidSignature,
             })?;
         let shown = presentation

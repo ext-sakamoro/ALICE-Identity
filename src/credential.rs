@@ -15,6 +15,8 @@ use std::collections::BTreeMap;
 use crate::did::Did;
 use crate::errors::IdentityError;
 
+/// Claim names starting with this are reserved for the credential's own fields.
+pub const RESERVED_PREFIX: char = '@';
 /// The claim naming the credential's subject (always shown).
 pub const SUBJECT_CLAIM: &str = "@subject";
 /// The claim naming the credential's type (always shown).
@@ -42,7 +44,8 @@ pub struct CredentialTerms<'a> {
     pub subject: &'a Did,
     /// First valid second (UNIX).
     pub issued_at: u64,
-    /// First invalid second (UNIX); `None` for no expiry.
+    /// First invalid second (UNIX); `None` for no expiry (the window then ends at `u64::MAX`,
+    /// which itself is outside it).
     pub expires_at: Option<u64>,
 }
 
@@ -51,21 +54,25 @@ impl VerifiableCredential {
     /// claim from a cryptographic source), with the subject and type added as claims.
     ///
     /// # Errors
-    /// `IdentityError::SchemaValidation` when a claim name repeats or is one of the reserved
-    /// `@subject` / `@type`.
+    /// `IdentityError::SchemaValidation` when a claim name repeats or starts with `@` (reserved
+    /// for the credential's own fields), or when `expires_at` is not after `issued_at` (a
+    /// credential that is never valid).
     pub fn issue(
         issuer: &KeyPair,
         terms: &CredentialTerms<'_>,
         claims: Vec<Claim>,
         reserved_salts: [[u8; SALT_LENGTH]; 2],
     ) -> Result<Self, IdentityError> {
-        if let Some(c) = claims
-            .iter()
-            .find(|c| c.name == SUBJECT_CLAIM || c.name == TYPE_CLAIM)
-        {
+        if let Some(c) = claims.iter().find(|c| c.name.starts_with(RESERVED_PREFIX)) {
             return Err(IdentityError::SchemaValidation(format!(
-                "claim name {} is reserved",
+                "claim name {} is reserved (it starts with {RESERVED_PREFIX})",
                 c.name
+            )));
+        }
+        if terms.expires_at.is_some_and(|e| e <= terms.issued_at) {
+            return Err(IdentityError::SchemaValidation(format!(
+                "expires_at {:?} is not after issued_at {}: the credential would never be valid",
+                terms.expires_at, terms.issued_at
             )));
         }
         let mut all = claims;
@@ -121,6 +128,9 @@ impl VerifiableCredential {
 
 /// Some claims of a credential, as a verifier receives them; nothing in it is trusted until
 /// [`crate::verifier::CredentialVerifier::verify`] accepts it.
+///
+/// A presentation is a bearer token: it names no audience and carries no nonce, so whoever holds
+/// it can show it again; it says what the issuer signed, not who is presenting it.
 #[derive(Debug, Clone)]
 pub struct CredentialPresentation {
     /// The issuer's `did:key`.
@@ -137,6 +147,6 @@ pub(crate) fn claim_error(e: ClaimError) -> IdentityError {
         ClaimError::DuplicateName(n) => {
             IdentityError::SchemaValidation(format!("claim name {n} appears twice"))
         }
-        _ => IdentityError::InvalidSignature,
+        other => IdentityError::DisclosureRefused(other.to_string()),
     }
 }

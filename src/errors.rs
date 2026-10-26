@@ -14,12 +14,24 @@ pub enum IdentityError {
     DocumentDeactivated(String),
     CredentialExpired,
     CredentialNotYetValid,
+    /// A credential issued under another credential format (alice-sign's cred identifier) than this
+    /// build verifies: the two identifiers
+    UnsupportedCredentialFormat {
+        stored: [u8; 32],
+        expected: [u8; 32],
+    },
+    /// The shown claims are not covered by the credential's signature, or their positions or
+    /// proofs are malformed (why, from alice-sign's claims check)
+    DisclosureRefused(String),
     CredentialRevoked(String),
     InvalidSignature,
     UntrustedIssuer(String),
     SchemaValidation(String),
     ClaimNotFound(String),
-    InvalidClaimType { field: String, expected: String },
+    InvalidClaimType {
+        field: String,
+        expected: String,
+    },
 }
 
 impl fmt::Display for IdentityError {
@@ -31,6 +43,18 @@ impl fmt::Display for IdentityError {
             Self::DocumentDeactivated(s) => write!(f, "DID document deactivated: {s}"),
             Self::CredentialExpired => write!(f, "credential has expired"),
             Self::CredentialNotYetValid => write!(f, "credential is not yet valid"),
+            Self::UnsupportedCredentialFormat { stored, expected } => {
+                write!(f, "credential format ")?;
+                for b in stored {
+                    write!(f, "{b:02x}")?;
+                }
+                write!(f, " is not this build's ")?;
+                for b in expected {
+                    write!(f, "{b:02x}")?;
+                }
+                Ok(())
+            }
+            Self::DisclosureRefused(why) => write!(f, "disclosure refused: {why}"),
             Self::CredentialRevoked(s) => write!(f, "credential revoked: {s}"),
             Self::InvalidSignature => write!(f, "invalid signature"),
             Self::UntrustedIssuer(s) => write!(f, "untrusted issuer: {s}"),
