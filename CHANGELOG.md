@@ -33,6 +33,7 @@
 - CI (ALICE-Law G11): ALICE-Law の `scripts/g11_self_check.py` を pin の revision で全 OS の float-environment job と preflight で走らせる (表、表の行、共有の写し、自前の写しが目標か、manifest の 4 つ)
 - CI (ALICE-Law G11): `scripts/id_move_check.py` と試験を ALICE-Law 4e694684 の表の目標の bytes (決め直した版) にし、`.github/shared-files-pin` をその rev に移した
 - CI (ALICE-Law G11): `.github/shared-files-pin` と `.github/g11-table-pin` を ALICE-Law b4275beb に上げた (self-check が pin と crate の tree を commit した bytes で読むので、改行を変換する Windows の checkout でも検査する) 共有の写しの bytes は同じ
+- CI (ALICE-Law G11): `.github/shared-files-pin` と `.github/g11-table-pin` を ALICE-Law 9cb423c9 に上げた (self-check が subprocess の出力を UTF-8 で読む) 共有の写しの bytes は同じ
 - `.gitattributes` で text file を全 OS で LF で取り出す (Windows で共有の file が表の bytes と一致する)
 - toolchain の pin を 1.92.0 から 1.98.1 にする (共有の検査器が読む rustdoc JSON の形式に合わせる) `RevocationList::from_bytes` の id の切り出しを `as_chunks` にする (bytes は変わらない)
 - README の licence の節を `LicenseRef-Proprietary` の一文と問い合わせ先にする
