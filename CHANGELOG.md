@@ -25,7 +25,7 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
-- CI (ALICE-Law G9 / G11): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした 他の共有の file も ALICE-Law 5bb1bea9 の表が計画した bytes にし、shared-files と G11 の表の pin を上げた
+- CI (ALICE-Law G9 / G11): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした 他の共有の file も ALICE-Law 7f5f4cbd の表が計画した bytes にし、shared-files と G11 の表の pin を上げた
 - **Breaking:** `credential::VerifiableCredential` は alice-sign の `cred::SignedCredential` (issuer の `did:key` の Ed25519 鍵で署名、時刻窓 `[issued_at, expires_at)`) と `cred::claims::ClaimSet` (salt つきの claim の Merkle の根) になる `VerifiableCredential::issue(issuer, terms, claims, reserved_salts)` で発行し、`present(fields)` で一部の claim だけを見せる `CredentialPresentation` を作る 主体と種類は claim `@subject` / `@type` として常に見せる
 - **Breaking:** `CredentialVerifier::verify(presentation, now, revoked)` は署名・時刻窓・失効・見せた claim が署名に覆われていることを確かめて `VerifiedClaims` を返す 以前は空でない `proof` を有効とし、期限の秒 (`now == expires_at`) を有効としていた 期限の秒からは `CredentialExpired`、`issued_at` の前は新しい `IdentityError::CredentialNotYetValid`
 - 依存: alice-sign の pin を 8a1b00d8 から bb79209e (feature `cred`) に上げた その版の alice-sign は `LicenseRef-Proprietary` なので `deny.toml` に例外を足した
