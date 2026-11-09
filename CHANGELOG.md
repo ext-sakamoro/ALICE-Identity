@@ -33,6 +33,7 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
+- CI: `actions/cache` を v6 に (v5 は廃止予定の node20 で動き、actionlint が error にする)
 - 依存: alice-sign を rev の固定から `branch = "main"` に変える (同じ alice-sign を引く他の crate と同じ取り方にして、1 つの build に alice-sign が 1 つだけ入るようにする) 使う commit は Cargo.lock が決める
 - CI (ALICE-Law G9 / G11): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした 他の共有の file も ALICE-Law 40973a8a の表が計画した bytes にし、shared-files と G11 の表の pin を上げた
 - **Breaking:** `credential::VerifiableCredential` は alice-sign の `cred::SignedCredential` (issuer の `did:key` の Ed25519 鍵で署名、時刻窓 `[issued_at, expires_at)`) と `cred::claims::ClaimSet` (salt つきの claim の Merkle の根) になる `VerifiableCredential::issue(issuer, terms, claims, reserved_salts)` で発行し、`present(fields)` で一部の claim だけを見せる `CredentialPresentation` を作る 主体と種類は claim `@subject` / `@type` として常に見せる
