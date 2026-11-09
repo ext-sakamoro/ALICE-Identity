@@ -20,7 +20,8 @@
 //! reads a clock, a random source or the network.
 
 use crate::did::Did;
-use alice_sign::{hash_data, PublicKey};
+use alice_crypto::sha256::digest;
+use alice_sign::PublicKey;
 use std::fmt::{self, Write as _};
 
 /// Prefixed to the first hash of each party (domain separation)
@@ -65,12 +66,12 @@ fn party(public: &PublicKey) -> ([u8; 32], String) {
     first.extend_from_slice(&len.to_be_bytes());
     first.extend_from_slice(did.as_bytes());
     first.extend_from_slice(&public.0);
-    let mut h = hash_data(&first).0;
+    let mut h = digest(&first);
     let mut next = [0u8; 64];
     next[32..].copy_from_slice(&public.0);
     for _ in 0..SAFETY_NUMBER_ITERATIONS {
         next[..32].copy_from_slice(&h);
-        h = hash_data(&next).0;
+        h = digest(&next);
     }
     let mut digits = String::with_capacity(30);
     for i in 0..6 {

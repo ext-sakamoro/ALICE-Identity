@@ -32,7 +32,8 @@ use crate::base32;
 use crate::cert_revocation::{RevocationList, RevocationListError};
 use crate::device_cert::{DeviceCert, DeviceCertError, MAX_SUBJECT_LEN};
 use crate::did::Did;
-use alice_sign::{hash_data, KeyPair, PublicKey, Signature};
+use alice_crypto::sha256::digest;
+use alice_sign::{KeyPair, PublicKey, Signature};
 use std::fmt;
 
 /// The only card layout this version reads and writes
@@ -388,7 +389,7 @@ impl ContactCard {
     pub fn short_code(&self) -> String {
         let mut m = CONTACT_CARD_SHORT_CODE_CONTEXT.to_vec();
         m.extend_from_slice(&self.to_bytes());
-        let code = base32::crockford_prefix(&hash_data(&m).0[..5], 8);
+        let code = base32::crockford_prefix(&digest(&m)[..5], 8);
         format!("{}-{}", &code[..4], &code[4..])
     }
 

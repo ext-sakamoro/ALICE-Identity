@@ -19,6 +19,7 @@
 - `invite::Invite` / `InviteRedemptions`: 1 回限りの署名付き招待 (did:key・鍵・呼び出し側が渡す 16 byte の id・有効期間、`INVITE_CONTEXT`) 有効期間は端末証明書と同じ規則 (始まりに `MAX_CLOCK_SKEW_SECS` の猶予、終わりは無し) 発行者の `InviteRedemptions` が `redeem` で 1 回だけ受け (2 回目は `AlreadyRedeemed`、他の発行者のものは `WrongIssuer`)、`cancel(invite_id)` で使う前に取り消し (`Cancelled`)、`prune(now)` で期限切れの記録を捨てる 文字列形 `ALICE-INVITE:1:` + base32
 - `safety_number::safety_number(a, b)`: 2 人の master 公開鍵から決まる 60 桁の数字 (各自 SHA-256 を 5200 回反復して 30 桁、昇順に連結) どちらの側でも同じで、どちらかの鍵の 1 bit でも変わると変わる QR で照合する 64 byte (`as_bytes`) 同じ鍵 2 つは `SameParty`
 - `base32` module (RFC 4648 と Crockford)
+- 依存に alice-crypto (git main、`default-features = false`) を足し、安全番号と短い code の SHA-256 をそこから取る (`rng` を持たないので OS の乱数源を link せず、wasm32-unknown-unknown でも build できる)
 - 試験: `tests/contact_card.rs` (13) / `tests/invite.rs` (11) / `tests/safety_number.rs` (5、1 bit の反転 512 通り) / `tests/no_network.rs` (src に通信・時計の呼び出しが 0 件、依存に通信の crate が無い) 期待値は Python の独立実装 `scripts/gen_contact_vectors.py` (hashlib・base64・pynacl) の出力 `tests/data/contact_vectors.json` 手で入れた変異 13 本は全て red `tests/semantics_golden.rs` に contact card / invite / safety number の pin を足した (digest は vector の bytes を外部で計算)
 - `device_cert::DeviceId` (16 byte、`derive` / `from_raw` / `as_bytes` / `Display` は小文字 hex) と `DEVICE_ID_CONTEXT`、試験 `tests/device_id.rs` (外部の hashlib で計算した 4 つの値、発行者が選んだ id を持つ正しく署名された証明書の拒否、version 2 の拒否、更新で同じ id、別名の subject と別の鍵で別の id、id の失効が更新にも効くこと)
 

@@ -15,3 +15,7 @@ authors = ["Moroya Sakamoto"]
 # source as every other crate that takes it, so one build links one alice-sign); the git and branch
 # keys go away then
 alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", branch = "main", features = ["cred"] }
+# SHA-256 of the safety number and of the contact card short code: alice-crypto (LicenseRef-Proprietary), by git from
+# its main like alice-sign; without its default features (no `rng`) it links no OS random source, so the crate
+# still builds for wasm32-unknown-unknown
+alice-crypto = { version = "0.6", git = "https://github.com/ext-sakamoro/ALICE-Crypto", branch = "main", default-features = false }

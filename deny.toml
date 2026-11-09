@@ -45,6 +45,12 @@ allow = ["LicenseRef-Proprietary"]
 name = "alice-sign"
 allow = ["LicenseRef-Proprietary"]
 
+# alice-crypto is proprietary (LicenseRef-Proprietary, the same rights holder), taken without its default
+# features for SHA-256
+[[licenses.exceptions]]
+name = "alice-crypto"
+allow = ["LicenseRef-Proprietary"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"   # path dependencies have no registry version
@@ -54,5 +60,8 @@ highlight = "all"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# alice-sign is a git dependency pinned to one commit
-allow-git = ["https://github.com/ext-sakamoro/ALICE-Sign"]
+# alice-sign and alice-crypto are git dependencies taken from their main
+allow-git = [
+    "https://github.com/ext-sakamoro/ALICE-Sign",
+    "https://github.com/ext-sakamoro/ALICE-Crypto",
+]
