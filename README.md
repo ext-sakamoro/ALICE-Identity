@@ -14,6 +14,7 @@ Decentralized identity (DID) — self-sovereign identity as DAG trust graphs.
 - **Claim Schemas**: Define and validate credential claim structures
 - **Device certificates**: a master key certifies a device key and the device's Noise static key (X25519) for a time window; signed revocation lists withdraw certificates
 - **Artifact signatures**: a certified device key signs the digest of any artifact for one stated context (such as `alice-mls/artifact/v1`); the verifier names the context it expects, checks the certificate at its own time and against the revocation list (skipping that check has to be stated, `Revocation::NoListAvailable`), and verifies strictly. The signature covers the digest of the whole certificate, so it cannot be moved under another issuer's certificate for the same device key. Bind everything to protect into the one digest (for example `SHA-256(law_ref || payload_digest)`)
+- **Signed artifacts**: a law reference and a payload kept or carried as one unit with the artifact signature over `SHA-256(law_ref || SHA-256(payload))` (`SignedArtifact`); its parts are read only through `SignedArtifact::open`, which checks the signature first, so a unit read back from storage is held to what a received one is and a rewritten one (a changed law reference or payload, or other ones under the old signature) is refused
 
 ## Usage
 

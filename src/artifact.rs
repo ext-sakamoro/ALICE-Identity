@@ -347,3 +347,162 @@ pub fn verify_artifact(
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// SignedArtifact: a law reference and a payload kept or carried with the signature that binds them
+// ---------------------------------------------------------------------------
+
+/// The version of the [`SignedArtifact`] encoding
+pub const SIGNED_ARTIFACT_VERSION: u8 = 1;
+
+/// The digest a [`SignedArtifact`] signs: `SHA-256(law_ref || SHA-256(payload))`
+///
+/// The payload digest has a fixed length at the end, so no other `(law_ref, payload)` gives the
+/// same input: the same payload under another law reference, or another payload under the same
+/// one, has another digest.
+#[must_use]
+pub fn bound_digest(law_ref: &[u8], payload: &[u8]) -> PayloadDigest {
+    let mut both = law_ref.to_vec();
+    both.extend_from_slice(&hash_data(payload).0);
+    PayloadDigest::sha256(hash_data(&both).0)
+}
+
+/// A law reference and a payload with the artifact signature that binds them (see
+/// [`bound_digest`]), as one unit to send or to store
+///
+/// ```text
+/// bytes = u8 version (1) || u32 BE law_ref length || law_ref
+///         || u32 BE payload length || payload
+///         || u32 BE signature length || ArtifactSignature bytes
+/// ```
+///
+/// Its parts are read only through [`SignedArtifact::open`], which checks the signature first: a
+/// receiver and a reader of storage call the same function, so a unit read back from storage is
+/// held to what a received one is. A unit whose law reference or payload was changed, or rewritten
+/// together with the signature of other ones, is refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedArtifact {
+    law_ref: Vec<u8>,
+    payload: Vec<u8>,
+    signature: ArtifactSignature,
+}
+
+/// The parts of a [`SignedArtifact`] whose signature [`SignedArtifact::open`] accepted
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verified {
+    law_ref: Vec<u8>,
+    payload: Vec<u8>,
+    signature: ArtifactSignature,
+}
+
+impl Verified {
+    /// The law reference the signature covers
+    #[must_use]
+    pub fn law_ref(&self) -> &[u8] {
+        &self.law_ref
+    }
+
+    /// The payload the signature covers
+    #[must_use]
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    /// The signature that was accepted
+    #[must_use]
+    pub const fn signature(&self) -> &ArtifactSignature {
+        &self.signature
+    }
+}
+
+impl SignedArtifact {
+    /// Sign `law_ref` and `payload` together for `context` with the device key `cert` names
+    ///
+    /// # Errors
+    /// As [`sign_artifact`], and [`ArtifactError::Malformed`] when a part is longer than the
+    /// encoding's 32-bit length field
+    pub fn sign(
+        device: &KeyPair,
+        cert: &DeviceCert,
+        context: &[u8],
+        law_ref: &[u8],
+        payload: &[u8],
+    ) -> Result<Self, ArtifactError> {
+        if u32::try_from(law_ref.len()).is_err() || u32::try_from(payload.len()).is_err() {
+            return Err(ArtifactError::Malformed(
+                "a part longer than 2^32 - 1 bytes",
+            ));
+        }
+        let signature = sign_artifact(device, cert, context, &bound_digest(law_ref, payload))?;
+        Ok(Self {
+            law_ref: law_ref.to_vec(),
+            payload: payload.to_vec(),
+            signature,
+        })
+    }
+
+    /// The encoding (see the type documentation)
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let signature = self.signature.to_bytes();
+        let mut b = vec![SIGNED_ARTIFACT_VERSION];
+        for part in [&self.law_ref[..], &self.payload[..], &signature[..]] {
+            // signing refuses a longer part, and a signature is far shorter
+            b.extend_from_slice(&u32::try_from(part.len()).unwrap_or(u32::MAX).to_be_bytes());
+            b.extend_from_slice(part);
+        }
+        b
+    }
+
+    /// Decode `bytes` and accept them only when the signature was made for `expected_context` over
+    /// [`bound_digest`] of the law reference and the payload they carry, by a device whose
+    /// certificate `master` issued, valid at `now` and not revoked by `revocation`
+    ///
+    /// The one way in for both a received unit and one read back from storage.
+    ///
+    /// # Errors
+    /// [`ArtifactError::UnsupportedVersion`] or [`ArtifactError::Malformed`] when the bytes are not
+    /// one unit, then as [`ArtifactSignature::from_bytes`] and [`verify_artifact`]: a changed law
+    /// reference or payload is [`ArtifactError::DigestMismatch`], a changed signature
+    /// [`ArtifactError::BadSignature`]
+    pub fn open(
+        bytes: &[u8],
+        master: &PublicKey,
+        expected_context: &[u8],
+        now: u64,
+        revocation: Revocation<'_>,
+    ) -> Result<Verified, ArtifactError> {
+        let mut r = Reader(bytes);
+        let version = r.take(1, "version")?[0];
+        if version != SIGNED_ARTIFACT_VERSION {
+            return Err(ArtifactError::UnsupportedVersion(version));
+        }
+        let law_ref = take_part(&mut r, "law reference")?;
+        let payload = take_part(&mut r, "payload")?;
+        let signature = ArtifactSignature::from_bytes(take_part(&mut r, "signature")?)?;
+        if !r.0.is_empty() {
+            return Err(ArtifactError::Malformed("bytes after the signature"));
+        }
+        verify_artifact(
+            &signature,
+            master,
+            expected_context,
+            &bound_digest(law_ref, payload),
+            now,
+            revocation,
+        )?;
+        Ok(Verified {
+            law_ref: law_ref.to_vec(),
+            payload: payload.to_vec(),
+            signature,
+        })
+    }
+}
+
+fn take_part<'a>(r: &mut Reader<'a>, what: &'static str) -> Result<&'a [u8], ArtifactError> {
+    let len = r.take(4, what)?;
+    let len = u32::from_be_bytes([len[0], len[1], len[2], len[3]]);
+    // a length past the end is refused by take; usize holds every u32 on the targets this builds for
+    let len = usize::try_from(len).map_err(|_| ArtifactError::Malformed(what))?;
+    r.take(len, what)
+}

@@ -10,6 +10,7 @@
 
 ### Added
 
+- `artifact::SignedArtifact` / `artifact::Verified` / `artifact::bound_digest` / `SIGNED_ARTIFACT_VERSION`: law の参照と payload を、両方を束ねる成果物署名 (`SHA-256(law_ref || SHA-256(payload))`) と 1 つの単位で送る・保存する 部分は `SignedArtifact::open` からだけ読め、open は署名を先に確かめる (受信と保存からの読み戻しが同じ関数を呼ぶ) law の参照・payload・署名の書き換えと、古い署名のまま別の参照と payload に揃えた書き換えを断る 符号化は version (1) と 3 つの部分 (u32 BE の長さ付き) 試験 `tests/signed_artifact.rs` (配置を手で組んだ oracle、書き換え 4 通り、目的・master の違い、形の崩れ)
 - `conformance/g11.toml` (ALICE-Law の `g11_table_gen.py` で生成した G11 の表) と `.github/g11-table-pin` / `scripts/g11_table.sh` (CI の clippy job と preflight で表を検査) shared-files の pin を ALICE-Law 0f545c29 に上げる
 - `alice-law-conformance.toml` (ALICE-Law G1〜G14 の状態と証跡、各 pass に測った変異) と `conformance/g11-own.toml` (G11 の表のこの repository の行)
 - `semantics` module: `IDENTITY_SEMANTICS_ID` (固定の Ed25519 seed から作る device certificate、artifact signature、signed claim、`did:key`、compact JWS の bytes の digest を畳み込んだ 32 byte の識別子) / `IDENTITY_SEMANTICS_PINS` / `IDENTITY_SEMANTICS_CHECKED_AT` と、試験 `tests/semantics_golden.rs` / `tests/identity_semantics_id.rs`
