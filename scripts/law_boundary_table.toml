@@ -63,6 +63,36 @@ class = "artifact signature"
 reason = "checks an artifact signature against a master key, a payload digest and a time"
 
 [[function]]
+file = "src/artifact.rs"
+name = "bound_digest"
+class = "signed artifact"
+reason = "the digest a signed artifact signs, SHA-256(law_ref || SHA-256(payload)), over law reference and payload bytes taken as they are"
+
+[[function]]
+file = "src/artifact.rs"
+name = "law_ref"
+class = "signed artifact"
+reason = "the law reference bytes of a signed artifact, given back only by open after the signature over them verified; the caller parses them (LawRef::from_bytes checks the law identifier)"
+
+[[function]]
+file = "src/artifact.rs"
+name = "payload"
+class = "signed artifact"
+reason = "the payload bytes of a signed artifact, given back only by open after the signature over them verified"
+
+[[function]]
+file = "src/artifact.rs"
+name = "sign"
+class = "signed artifact"
+reason = "signs a law reference and a payload as opaque bytes, bound into one digest; nothing is decoded"
+
+[[function]]
+file = "src/artifact.rs"
+name = "open"
+class = "signed artifact"
+reason = "decodes a signed artifact (version, three length-prefixed parts) and refuses it unless the artifact signature over its law reference and payload verifies; the one way in for a received or stored unit"
+
+[[function]]
 file = "src/base58.rs"
 name = "decode"
 class = "encoded text"
