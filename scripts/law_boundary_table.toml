@@ -106,39 +106,15 @@ reason = "the caller's bytes as base58btc text"
 
 [[function]]
 file = "src/cert_revocation.rs"
-name = "contains"
-class = "certificate id"
-reason = "a 16-byte certificate id looked up in the revocation list"
-
-[[function]]
-file = "src/cert_revocation.rs"
 name = "from_bytes"
 class = "revocation list"
 reason = "reads the encoded signed revocation list"
 
 [[function]]
 file = "src/cert_revocation.rs"
-name = "is_revoked"
-class = "certificate id"
-reason = "a 16-byte certificate id checked against a verified list"
-
-[[function]]
-file = "src/cert_revocation.rs"
-name = "issue"
-class = "revocation list"
-reason = "a list of 16-byte certificate ids signed with the master key"
-
-[[function]]
-file = "src/cert_revocation.rs"
 name = "issuer_public"
 class = "key material"
 reason = "the 32-byte Ed25519 public key of the issuer"
-
-[[function]]
-file = "src/cert_revocation.rs"
-name = "revoked"
-class = "certificate id"
-reason = "the revoked 16-byte certificate ids"
 
 [[function]]
 file = "src/cert_revocation.rs"
@@ -169,12 +145,6 @@ file = "src/credential.rs"
 name = "issue"
 class = "signed message"
 reason = "the 32-byte salts of the reserved @subject and @type claims; the credential it returns is alice-sign's SignedCredential, whose cred SEMANTICS_ID verify_at checks first"
-
-[[function]]
-file = "src/device_cert.rs"
-name = "cert_id"
-class = "certificate id"
-reason = "the 16-byte id the issuer gave the certificate"
 
 [[function]]
 file = "src/device_cert.rs"
@@ -259,3 +229,21 @@ file = "src/signed_did.rs"
 name = "canonical_bytes"
 class = "signed message"
 reason = "the canonical bytes of a claim set that a signature covers"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "derive"
+class = "certificate id"
+reason = "the 16-byte device id: the first 16 bytes of SHA-256 over DEVICE_ID_CONTEXT, the u16 BE subject length, the subject and the 32-byte device key"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "from_raw"
+class = "certificate id"
+reason = "a 16-byte device id read back as received (a revocation list entry, a peer id), not checked against any key"
+
+[[function]]
+file = "src/device_cert.rs"
+name = "as_bytes"
+class = "certificate id"
+reason = "the 16 bytes of a device id, as the certificate and the revocation list store them"

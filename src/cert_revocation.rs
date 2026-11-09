@@ -1,5 +1,5 @@
-//! Revocation of device certificates: a master key signs a sequenced list of the certificate ids
-//! it has revoked, and [`CertRevocations`] keeps the newest list each master has published.
+//! Revocation of device keys: a master key signs a sequenced list of the device ids
+//! ([`DeviceId`]) it has revoked, and [`CertRevocations`] keeps the newest list each master has published.
 //!
 //! The list is encoded as one canonical byte layout and signed with its own context prefix, so it
 //! is never mistaken for a device certificate or any other statement under the same key:
@@ -7,14 +7,17 @@
 //! ```text
 //! signed = REVOCATION_LIST_CONTEXT || body
 //! body   = version (1) || issuer_public (32) || sequence (u64 BE) || issued_at (u64 BE)
-//!          || count (u32 BE) || cert_id (16) * count, strictly ascending
+//!          || count (u32 BE) || device_id (16) * count, strictly ascending
 //! bytes  = body || signature (64)
 //! ```
+//!
+//! A device id is derived from the subject and the device key, so revoking one revokes every
+//! certificate of that key under that subject, renewals included.
 //!
 //! Members that receive lists in different orders converge: a higher sequence replaces a lower
 //! one, a lower one is ignored, and two different lists with the same sequence are a conflict.
 
-use crate::device_cert::DeviceCert;
+use crate::device_cert::{DeviceCert, DeviceId};
 use alice_sign::{KeyPair, PublicKey, Signature};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -30,14 +33,14 @@ const HEAD: usize = 1 + 32 + 8 + 8 + 4;
 const ID: usize = 16;
 const SIGNATURE: usize = 64;
 
-/// A master key's signed list of the device certificate ids it has revoked
+/// A master key's signed list of the device ids it has revoked
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevocationList {
     version: u8,
     issuer_public: [u8; 32],
     sequence: u64,
     issued_at: u64,
-    revoked: Vec<[u8; 16]>,
+    revoked: Vec<DeviceId>,
     signature: [u8; 64],
 }
 
@@ -78,7 +81,7 @@ impl std::error::Error for RevocationListError {}
 impl RevocationList {
     /// Sign the list of `revoked` ids (in any order, repeats allowed: they are sorted and merged)
     #[must_use]
-    pub fn issue(master: &KeyPair, sequence: u64, issued_at: u64, revoked: &[[u8; 16]]) -> Self {
+    pub fn issue(master: &KeyPair, sequence: u64, issued_at: u64, revoked: &[DeviceId]) -> Self {
         let mut ids = revoked.to_vec();
         ids.sort_unstable();
         ids.dedup();
@@ -106,7 +109,7 @@ impl RevocationList {
         b.extend_from_slice(&self.issued_at.to_be_bytes());
         b.extend_from_slice(&count.to_be_bytes());
         for id in &self.revoked {
-            b.extend_from_slice(id);
+            b.extend_from_slice(id.as_bytes());
         }
         b
     }
@@ -150,7 +153,12 @@ impl RevocationList {
         if bytes.len() - HEAD != ids_len + SIGNATURE {
             return Err(RevocationListError::Malformed("length for the count"));
         }
-        let revoked: Vec<[u8; 16]> = bytes[HEAD..HEAD + ids_len].as_chunks::<ID>().0.to_vec();
+        let revoked: Vec<DeviceId> = bytes[HEAD..HEAD + ids_len]
+            .as_chunks::<ID>()
+            .0
+            .iter()
+            .map(|id| DeviceId::from_raw(*id))
+            .collect();
         if revoked.windows(2).any(|w| w[0] >= w[1]) {
             return Err(RevocationListError::Malformed("order"));
         }
@@ -182,10 +190,10 @@ impl RevocationList {
         Ok(())
     }
 
-    /// Whether `cert_id` is on the list
+    /// Whether `device_id` is on the list
     #[must_use]
-    pub fn contains(&self, cert_id: &[u8; 16]) -> bool {
-        self.revoked.binary_search(cert_id).is_ok()
+    pub fn contains(&self, device_id: &DeviceId) -> bool {
+        self.revoked.binary_search(device_id).is_ok()
     }
 
     #[must_use]
@@ -210,7 +218,7 @@ impl RevocationList {
 
     /// The revoked ids, strictly ascending
     #[must_use]
-    pub fn revoked(&self) -> &[[u8; 16]] {
+    pub fn revoked(&self) -> &[DeviceId] {
         &self.revoked
     }
 
@@ -278,17 +286,17 @@ impl CertRevocations {
         self.lists.get(&master.0).map(RevocationList::sequence)
     }
 
-    /// Whether the newest list of `master` revokes `cert_id` (no list: not revoked)
+    /// Whether the newest list of `master` revokes `device_id` (no list: not revoked)
     #[must_use]
-    pub fn is_revoked(&self, master: &PublicKey, cert_id: &[u8; 16]) -> bool {
+    pub fn is_revoked(&self, master: &PublicKey, device_id: &DeviceId) -> bool {
         self.lists
             .get(&master.0)
-            .is_some_and(|l| l.contains(cert_id))
+            .is_some_and(|l| l.contains(device_id))
     }
 
     /// Whether the newest list of the certificate's issuer revokes it
     #[must_use]
     pub fn revokes(&self, cert: &DeviceCert) -> bool {
-        self.is_revoked(&PublicKey(*cert.issuer_public()), cert.cert_id())
+        self.is_revoked(&PublicKey(*cert.issuer_public()), &cert.device_id())
     }
 }

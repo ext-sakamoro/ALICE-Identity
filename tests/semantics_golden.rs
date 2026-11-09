@@ -75,7 +75,6 @@ fn cert() -> DeviceCert {
         [0x4e; 32],
         ISSUED_AT,
         NOT_AFTER,
-        [0xa5; 16],
     )
     .unwrap()
 }
@@ -85,7 +84,7 @@ fn device_certificate() {
     assert_golden(
         "device certificate",
         &cert().to_bytes(),
-        "5b007b2cc3f4e2238774eed0b02fa7c710b03e8e2251916740b46427c5cda418",
+        "dc0b1a57f0084d634ad3c9bcdfd3f7443587ce95d87bb52a886a9af9b15bb865",
     );
 }
 
@@ -101,7 +100,7 @@ fn artifact_signature() {
     assert_golden(
         "artifact signature",
         &sig.to_bytes(),
-        "5c7e5cdbc180d7f888b1ea8e374b3a3ab3d8b6629101adfb33a654dbf2696b70",
+        "8d729c5a075d67f21773de9011ffced0f097f5aa0bd26907653cb36732004ccc",
     );
 }
 

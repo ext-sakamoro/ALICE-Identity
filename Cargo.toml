@@ -1,6 +1,6 @@
 [package]
 name = "alice-identity"
-version = "1.2.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.88"
 license = "LicenseRef-Proprietary"

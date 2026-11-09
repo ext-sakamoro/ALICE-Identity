@@ -5,7 +5,7 @@ use alice_identity::cert_revocation::{
     Accepted, CertRevocations, RevocationList, RevocationListError, REVOCATION_LIST_CONTEXT,
     REVOCATION_LIST_VERSION,
 };
-use alice_identity::device_cert::DeviceCert;
+use alice_identity::device_cert::{DeviceCert, DeviceId};
 use alice_identity::did::Did;
 use alice_sign::{KeyPair, PublicKey, Signature};
 
@@ -15,18 +15,18 @@ fn master() -> KeyPair {
     KeyPair::from_seed([7; 32])
 }
 
-fn id(n: u8) -> [u8; 16] {
-    [n; 16]
+fn id(n: u8) -> DeviceId {
+    DeviceId::from_raw([n; 16])
 }
 
-fn expected_body(master: &KeyPair, sequence: u64, ids: &[[u8; 16]]) -> Vec<u8> {
+fn expected_body(master: &KeyPair, sequence: u64, ids: &[DeviceId]) -> Vec<u8> {
     let mut b = vec![1u8];
     b.extend_from_slice(&master.public().0);
     b.extend_from_slice(&sequence.to_be_bytes());
     b.extend_from_slice(&AT.to_be_bytes());
     b.extend_from_slice(&u32::try_from(ids.len()).unwrap().to_be_bytes());
     for i in ids {
-        b.extend_from_slice(i);
+        b.extend_from_slice(i.as_bytes());
     }
     b
 }
@@ -120,7 +120,6 @@ fn a_device_certificate_signature_is_not_a_list_signature() {
         [2; 32],
         AT,
         AT + 1,
-        id(4),
     )
     .unwrap();
     let l = RevocationList::issue(&m, 1, AT, &[id(1)]);
@@ -270,17 +269,20 @@ fn lists_of_different_masters_are_kept_apart() {
 fn a_certificate_is_revoked_by_its_issuers_list() {
     let m = master();
     let did = Did::parse("did:alice:p").unwrap();
-    let c = DeviceCert::issue(&m, &did, [1; 32], [2; 32], AT, AT + 10, id(6)).unwrap();
+    let c = DeviceCert::issue(&m, &did, [1; 32], [2; 32], AT, AT + 10).unwrap();
     let mut r = CertRevocations::new();
     assert!(!r.revokes(&c));
-    r.accept(RevocationList::issue(&m, 1, AT, &[id(6)]), &m.public())
-        .unwrap();
+    r.accept(
+        RevocationList::issue(&m, 1, AT, &[c.device_id()]),
+        &m.public(),
+    )
+    .unwrap();
     assert!(r.revokes(&c));
     // the same id under another master's list does not revoke it
     let other = KeyPair::from_seed([8; 32]);
     let mut r2 = CertRevocations::new();
     r2.accept(
-        RevocationList::issue(&other, 1, AT, &[id(6)]),
+        RevocationList::issue(&other, 1, AT, &[c.device_id()]),
         &other.public(),
     )
     .unwrap();
