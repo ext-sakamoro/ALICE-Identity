@@ -247,3 +247,93 @@ file = "src/device_cert.rs"
 name = "as_bytes"
 class = "certificate id"
 reason = "the 16 bytes of a device id, as the certificate and the revocation list store them"
+
+[[function]]
+file = "src/base32.rs"
+name = "crockford_prefix"
+class = "encoded text"
+reason = "the Crockford base32 text of a digest prefix (the contact card short code)"
+
+[[function]]
+file = "src/base32.rs"
+name = "decode"
+class = "encoded text"
+reason = "the bytes of an RFC 4648 base32 text, refusing any non-canonical text"
+
+[[function]]
+file = "src/base32.rs"
+name = "encode"
+class = "encoded text"
+reason = "the RFC 4648 base32 text of the caller's bytes (contact card and invite text forms)"
+
+[[function]]
+file = "src/contact_card.rs"
+name = "from_bytes"
+class = "contact card"
+reason = "reads and accepts an encoded contact card (subject, signature, certificate issuers, revocations)"
+
+[[function]]
+file = "src/contact_card.rs"
+name = "master_public"
+class = "key material"
+reason = "the 32-byte Ed25519 public master key the card names"
+
+[[function]]
+file = "src/contact_card.rs"
+name = "signed_message"
+class = "signed message"
+reason = "the context and body bytes the master's signature over a contact card covers"
+
+[[function]]
+file = "src/contact_card.rs"
+name = "to_bytes"
+class = "contact card"
+reason = "the encoded contact card (did:key, master key, device certificates, revocation list, Ed25519 signature)"
+
+[[function]]
+file = "src/invite.rs"
+name = "cancel"
+class = "certificate id"
+reason = "marks a 16-byte invite id as cancelled in the issuer's record"
+
+[[function]]
+file = "src/invite.rs"
+name = "from_bytes"
+class = "invite"
+reason = "reads and accepts an encoded invite (issuer, validity order, signature)"
+
+[[function]]
+file = "src/invite.rs"
+name = "invite_id"
+class = "certificate id"
+reason = "the 16-byte invite id the caller drew from the OS random source"
+
+[[function]]
+file = "src/invite.rs"
+name = "issue"
+class = "invite"
+reason = "an Ed25519-signed invite over the issuer's did:key, a caller-chosen 16-byte id and a validity window"
+
+[[function]]
+file = "src/invite.rs"
+name = "issuer_public"
+class = "key material"
+reason = "the 32-byte Ed25519 public key of the invite's issuer"
+
+[[function]]
+file = "src/invite.rs"
+name = "signed_message"
+class = "signed message"
+reason = "the context and body bytes the issuer's signature over an invite covers"
+
+[[function]]
+file = "src/invite.rs"
+name = "to_bytes"
+class = "invite"
+reason = "the encoded invite (issuer did:key, key, id, validity, Ed25519 signature)"
+
+[[function]]
+file = "src/safety_number.rs"
+name = "as_bytes"
+class = "digest"
+reason = "the two parties' final SHA-256 hashes of the safety number, in ascending order"
