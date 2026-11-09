@@ -25,7 +25,10 @@ const NOW: u64 = 1_800_000_200;
 
 fn unhex(s: &str) -> Vec<u8> {
     let s = s.trim();
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn master() -> KeyPair {
@@ -119,8 +122,18 @@ fn the_reference_bytes_and_text_decode_and_verify() {
 fn a_subject_that_is_not_the_did_key_of_the_master_is_refused() {
     let m = master();
     let other = KeyPair::from_seed([8; 32]);
-    let named = signed_card(&m, CONTACT_CARD_CONTEXT, "did:alice:jane", &m.public().0, &cert_bytes(), b"");
-    assert_eq!(ContactCard::from_bytes(&named), Err(ContactCardError::SubjectNotDidKey));
+    let named = signed_card(
+        &m,
+        CONTACT_CARD_CONTEXT,
+        "did:alice:jane",
+        &m.public().0,
+        &cert_bytes(),
+        b"",
+    );
+    assert_eq!(
+        ContactCard::from_bytes(&named),
+        Err(ContactCardError::SubjectNotDidKey)
+    );
     let foreign = signed_card(
         &m,
         CONTACT_CARD_CONTEXT,
@@ -129,14 +142,27 @@ fn a_subject_that_is_not_the_did_key_of_the_master_is_refused() {
         &cert_bytes(),
         b"",
     );
-    assert_eq!(ContactCard::from_bytes(&foreign), Err(ContactCardError::SubjectKeyMismatch));
+    assert_eq!(
+        ContactCard::from_bytes(&foreign),
+        Err(ContactCardError::SubjectKeyMismatch)
+    );
 }
 
 #[test]
 fn a_signature_under_another_context_is_refused() {
     let m = master();
-    let card = signed_card(&m, DEVICE_CERT_CONTEXT, SUBJECT, &m.public().0, &cert_bytes(), b"");
-    assert_eq!(ContactCard::from_bytes(&card), Err(ContactCardError::BadSignature));
+    let card = signed_card(
+        &m,
+        DEVICE_CERT_CONTEXT,
+        SUBJECT,
+        &m.public().0,
+        &cert_bytes(),
+        b"",
+    );
+    assert_eq!(
+        ContactCard::from_bytes(&card),
+        Err(ContactCardError::BadSignature)
+    );
 }
 
 #[test]
@@ -164,8 +190,18 @@ fn a_certificate_of_another_master_is_refused() {
         Err(ContactCardError::CertIssuerMismatch(1))
     );
     let bytes: Vec<Vec<u8>> = mixed.iter().map(DeviceCert::to_bytes).collect();
-    let card = signed_card(&m, CONTACT_CARD_CONTEXT, SUBJECT, &m.public().0, &bytes, b"");
-    assert_eq!(ContactCard::from_bytes(&card), Err(ContactCardError::CertIssuerMismatch(1)));
+    let card = signed_card(
+        &m,
+        CONTACT_CARD_CONTEXT,
+        SUBJECT,
+        &m.public().0,
+        &bytes,
+        b"",
+    );
+    assert_eq!(
+        ContactCard::from_bytes(&card),
+        Err(ContactCardError::CertIssuerMismatch(1))
+    );
 }
 
 #[test]
@@ -177,8 +213,18 @@ fn a_revoked_device_is_not_carried() {
         ContactCard::issue(&m, &cs, Some(&list), ISSUED_AT),
         Err(ContactCardError::RevokedCert(0))
     );
-    let card = signed_card(&m, CONTACT_CARD_CONTEXT, SUBJECT, &m.public().0, &cert_bytes(), &list.to_bytes());
-    assert_eq!(ContactCard::from_bytes(&card), Err(ContactCardError::RevokedCert(0)));
+    let card = signed_card(
+        &m,
+        CONTACT_CARD_CONTEXT,
+        SUBJECT,
+        &m.public().0,
+        &cert_bytes(),
+        &list.to_bytes(),
+    );
+    assert_eq!(
+        ContactCard::from_bytes(&card),
+        Err(ContactCardError::RevokedCert(0))
+    );
     // the same list without the carried devices is accepted and travels with the card
     let other = RevocationList::issue(&m, 2, ISSUED_AT, &[]);
     let card = ContactCard::issue(&m, &cs, Some(&other), ISSUED_AT).unwrap();
@@ -205,7 +251,10 @@ fn verify_checks_every_certificate_at_now() {
         card.verify(CERT_NOT_AFTER),
         Err(ContactCardError::Cert(
             0,
-            DeviceCertError::Expired { now: CERT_NOT_AFTER, not_after: CERT_NOT_AFTER }
+            DeviceCertError::Expired {
+                now: CERT_NOT_AFTER,
+                not_after: CERT_NOT_AFTER
+            }
         ))
     );
     card.verify(CERT_NOT_AFTER - 1).unwrap();
@@ -214,39 +263,71 @@ fn verify_checks_every_certificate_at_now() {
 #[test]
 fn the_number_of_certificates_is_bounded() {
     let m = master();
-    assert_eq!(ContactCard::issue(&m, &[], None, ISSUED_AT), Err(ContactCardError::NoCerts));
-    let many: Vec<DeviceCert> = (0..=MAX_CARD_CERTS).map(|i| cert(&m, 100 + i as u8, 1)).collect();
+    assert_eq!(
+        ContactCard::issue(&m, &[], None, ISSUED_AT),
+        Err(ContactCardError::NoCerts)
+    );
+    let many: Vec<DeviceCert> = (0..=MAX_CARD_CERTS)
+        .map(|i| cert(&m, 100 + i as u8, 1))
+        .collect();
     assert_eq!(
         ContactCard::issue(&m, &many, None, ISSUED_AT),
         Err(ContactCardError::TooManyCerts(MAX_CARD_CERTS + 1))
     );
     ContactCard::issue(&m, &many[..MAX_CARD_CERTS], None, ISSUED_AT).unwrap();
     let none = signed_card(&m, CONTACT_CARD_CONTEXT, SUBJECT, &m.public().0, &[], b"");
-    assert_eq!(ContactCard::from_bytes(&none), Err(ContactCardError::NoCerts));
+    assert_eq!(
+        ContactCard::from_bytes(&none),
+        Err(ContactCardError::NoCerts)
+    );
 }
 
 #[test]
 fn truncated_and_trailing_bytes_are_refused() {
     let bytes = unhex(CARD_HEX);
-    assert!(matches!(ContactCard::from_bytes(&[]), Err(ContactCardError::Malformed(_))));
+    assert!(matches!(
+        ContactCard::from_bytes(&[]),
+        Err(ContactCardError::Malformed(_))
+    ));
     for len in [1, 3, 40, bytes.len() - 65, bytes.len() - 1] {
-        assert!(ContactCard::from_bytes(&bytes[..len]).is_err(), "length {len}");
+        assert!(
+            ContactCard::from_bytes(&bytes[..len]).is_err(),
+            "length {len}"
+        );
     }
     let mut longer = bytes.clone();
     longer.push(0);
     assert!(ContactCard::from_bytes(&longer).is_err());
     let mut v2 = bytes;
     v2[0] = 2;
-    assert_eq!(ContactCard::from_bytes(&v2), Err(ContactCardError::UnsupportedVersion(2)));
+    assert_eq!(
+        ContactCard::from_bytes(&v2),
+        Err(ContactCardError::UnsupportedVersion(2))
+    );
 }
 
 #[test]
 fn the_text_form_takes_only_its_prefix_and_upper_case_base32() {
     let text = CARD_TEXT.trim();
     let body = &text[CONTACT_CARD_TEXT_PREFIX.len()..];
-    assert_eq!(ContactCard::from_text(&format!("alice-card:1:{body}")), Err(ContactCardError::BadText));
-    assert_eq!(ContactCard::from_text(&text.to_lowercase()), Err(ContactCardError::BadText));
-    assert_eq!(ContactCard::from_text(&format!("{text}=")), Err(ContactCardError::BadText));
-    assert_eq!(ContactCard::from_text(&format!("{text} ")), Err(ContactCardError::BadText));
-    assert_eq!(ContactCard::from_text(CONTACT_CARD_TEXT_PREFIX), Err(ContactCardError::BadText));
+    assert_eq!(
+        ContactCard::from_text(&format!("alice-card:1:{body}")),
+        Err(ContactCardError::BadText)
+    );
+    assert_eq!(
+        ContactCard::from_text(&text.to_lowercase()),
+        Err(ContactCardError::BadText)
+    );
+    assert_eq!(
+        ContactCard::from_text(&format!("{text}=")),
+        Err(ContactCardError::BadText)
+    );
+    assert_eq!(
+        ContactCard::from_text(&format!("{text} ")),
+        Err(ContactCardError::BadText)
+    );
+    assert_eq!(
+        ContactCard::from_text(CONTACT_CARD_TEXT_PREFIX),
+        Err(ContactCardError::BadText)
+    );
 }

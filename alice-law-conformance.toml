@@ -51,9 +51,9 @@ reference_repo = "ALICE-LOL"
 [G4]
 status = "pass"
 evidence = [
-    "tests/semantics_golden.rs: five recorded-bit scenarios from fixed Ed25519 seeds (device certificate, artifact signature, signed claim, did:key, compact jws) and checker_rejects_a_wrong_digest / checker_rejects_a_scenario_that_produced_nothing",
-    "tests/device_cert.rs, tests/artifact.rs and tests/did_key.rs build the expected layouts byte by byte and sign with alice-sign, independently of the code under test",
-    ".github/workflows/ci.yml: debug in the test job `.github/workflows/ci.yml#- name: Law tests (semantics goldens and identifier, hash order)` and release in the release job `.github/workflows/ci.yml#- name: Law tests (release)`, each on ubuntu-latest (x86_64) and macos-latest (aarch64); scripts/run_tests.sh semantics_golden=7 fails a leg that ran fewer tests",
+    "tests/semantics_golden.rs: eight recorded-bit scenarios from fixed Ed25519 seeds (device certificate, artifact signature, signed claim, did:key, compact jws, contact card, invite, safety number) and checker_rejects_a_wrong_digest / checker_rejects_a_scenario_that_produced_nothing",
+    "tests/device_cert.rs, tests/artifact.rs, tests/did_key.rs, tests/contact_card.rs, tests/invite.rs and tests/safety_number.rs (with the Python reference scripts/gen_contact_vectors.py) build the expected layouts byte by byte and sign with alice-sign, independently of the code under test",
+    ".github/workflows/ci.yml: debug in the test job `.github/workflows/ci.yml#- name: Law tests (semantics goldens and identifier, hash order)` and release in the release job `.github/workflows/ci.yml#- name: Law tests (release)`, each on ubuntu-latest (x86_64) and macos-latest (aarch64); scripts/run_tests.sh semantics_golden=10 fails a leg that ran fewer tests",
 ]
 mutant = "measured 2026-10-25, reverted: ARTIFACT_DOMAIN changed from `alice-identity artifact v1` to `alice-identity artifact v9` fails the artifact signature golden in the release profile (a82e142b... against the recorded 5c7e5cdb...)"
 since = ""
@@ -74,7 +74,7 @@ reference_repo = "ALICE-DB"
 [G6]
 status = "pass"
 evidence = [
-    "`src/semantics.rs#pub const IDENTITY_SEMANTICS_ID` (44701b17...386f6d: the fold of `src/semantics.rs#pub const IDENTITY_SEMANTICS_PINS`, the five recorded-bit scenarios of tests/semantics_golden.rs, by the fold of alice-det-math) and `src/semantics.rs#pub const IDENTITY_SEMANTICS_CHECKED_AT` (2.0.0, 1.98.1)",
+    "`src/semantics.rs#pub const IDENTITY_SEMANTICS_ID` (76603ef9...f4c104: the fold of `src/semantics.rs#pub const IDENTITY_SEMANTICS_PINS`, the eight recorded-bit scenarios of tests/semantics_golden.rs, by the fold of alice-det-math) and `src/semantics.rs#pub const IDENTITY_SEMANTICS_CHECKED_AT` (2.0.0, 1.98.1)",
     "tests/identity_semantics_id.rs (7 tests: the entries are exactly the recorded goldens, the fold, the recorded value, one changed bit moves it, no cfg, version and toolchain, no golden elsewhere under tests/)",
     ".github/workflows/ci.yml Law tests steps (debug and release, x86_64 and aarch64): scripts/run_tests.sh identity_semantics_id=7",
 ]

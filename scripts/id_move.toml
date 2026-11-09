@@ -7,3 +7,7 @@ tags = ["v{version}", "alice-identity-v{version}"]
 
 [[id]]
 path = "alice_identity::semantics::IDENTITY_SEMANTICS_ID"
+
+[exempt]
+RFC4648 = "the RFC 4648 base32 alphabet (32 characters), a fixed table of the text format, not a content identifier"
+CROCKFORD = "Crockford's base32 alphabet (32 characters) for short codes, a fixed table, not a content identifier"

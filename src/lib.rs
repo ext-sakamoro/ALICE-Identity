@@ -19,14 +19,17 @@
 )]
 
 pub mod artifact;
+pub mod base32;
 pub mod base58;
 pub mod cert_revocation;
 pub mod claim_schema;
+pub mod contact_card;
 pub mod credential;
 pub mod device_cert;
 pub mod did;
 pub mod did_document;
 pub mod errors;
+pub mod invite;
 pub mod jws;
 pub mod master_key;
 pub mod prelude;
@@ -34,6 +37,7 @@ pub mod presentation;
 pub mod public_key;
 pub mod resolver;
 pub mod revocation;
+pub mod safety_number;
 pub mod semantics;
 pub mod service_endpoint;
 pub mod signed_did;

@@ -43,7 +43,9 @@ fn the_grouped_form_is_twelve_groups_of_five_digits() {
     let grouped = n.grouped();
     let groups: Vec<&str> = grouped.split(' ').collect();
     assert_eq!(groups.len(), 12);
-    assert!(groups.iter().all(|g| g.len() == 5 && g.bytes().all(|c| c.is_ascii_digit())));
+    assert!(groups
+        .iter()
+        .all(|g| g.len() == 5 && g.bytes().all(|c| c.is_ascii_digit())));
     assert_eq!(groups.concat(), DIGITS);
     assert_eq!(groups[0], "79865");
 }

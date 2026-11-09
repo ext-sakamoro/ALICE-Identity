@@ -63,7 +63,8 @@ fn no_source_file_names_a_network_call_or_a_clock() {
 
 #[test]
 fn no_dependency_is_a_network_crate() {
-    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
+    let manifest =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
     let deps: Vec<&str> = manifest
         .split("[dependencies]")
         .nth(1)
@@ -74,7 +75,15 @@ fn no_dependency_is_a_network_crate() {
         .filter_map(|l| l.split('=').next().map(str::trim))
         .collect();
     assert!(!deps.is_empty(), "read no dependency");
-    for name in ["reqwest", "ureq", "hyper", "tokio", "async-std", "surf", "isahc"] {
+    for name in [
+        "reqwest",
+        "ureq",
+        "hyper",
+        "tokio",
+        "async-std",
+        "surf",
+        "isahc",
+    ] {
         assert!(!deps.contains(&name), "{name} is a dependency");
     }
 }

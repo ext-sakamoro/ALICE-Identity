@@ -7,9 +7,12 @@
 //! the bytes as a whole. Every CI leg (debug and release, x86_64 and aarch64) must reproduce them bit for bit.
 
 use alice_identity::artifact::{sha256_payload, sign_artifact};
+use alice_identity::contact_card::ContactCard;
 use alice_identity::device_cert::DeviceCert;
 use alice_identity::did::Did;
+use alice_identity::invite::Invite;
 use alice_identity::jws;
+use alice_identity::safety_number::safety_number;
 use alice_identity::signed_did::{ClaimSet, SignedClaim};
 use alice_sign::KeyPair;
 
@@ -137,5 +140,51 @@ fn compact_jws() {
         "compact jws",
         token.as_bytes(),
         "afc7989ada00fc73b7b5f5965998b9d69d63e85be747a2e1910c3bba3ba12898",
+    );
+}
+
+/// The scenario of tests/data/contact_vectors.json; the digest is the SHA-256 of that file's card bytes,
+/// computed outside this crate
+#[test]
+fn contact_card() {
+    let m = master();
+    let subject = Did::key_ed25519(&m.public());
+    let certs: Vec<DeviceCert> = [(9u8, 0x4eu8), (10, 0x4f)]
+        .iter()
+        .map(|&(d, n)| {
+            DeviceCert::issue(&m, &subject, [d; 32], [n; 32], ISSUED_AT, NOT_AFTER).unwrap()
+        })
+        .collect();
+    let card = ContactCard::issue(&m, &certs, None, ISSUED_AT + 100).unwrap();
+    assert_golden(
+        "contact card",
+        &card.to_bytes(),
+        "9447aa732500b4168e9103a38db05dc8d632ecbaee71e809035acae7f238f4e9",
+    );
+}
+
+/// The scenario of tests/data/contact_vectors.json (invite); the digest is computed outside this crate
+#[test]
+fn invite() {
+    let id: [u8; 16] = core::array::from_fn(|i| i as u8);
+    let inv = Invite::issue(&master(), id, ISSUED_AT, ISSUED_AT + 3600).unwrap();
+    assert_golden(
+        "invite",
+        &inv.to_bytes(),
+        "84197ce9cddf6f0a9954a09913b7f61f9234a22a9296dacab9a0603d1d87f3c1",
+    );
+}
+
+/// The scenario of tests/data/contact_vectors.json (safety number of seeds 1 and 2); the digest is the
+/// SHA-256 of the 64 comparison bytes, computed outside this crate
+#[test]
+fn safety_number_bytes() {
+    let a = KeyPair::from_seed([1; 32]).public();
+    let b = KeyPair::from_seed([2; 32]).public();
+    let n = safety_number(&a, &b).unwrap();
+    assert_golden(
+        "safety number",
+        n.as_bytes(),
+        "66fc0d6632ae406420a468bd0a22796eeda724e2ee30f7067bac24333fb323b6",
     );
 }

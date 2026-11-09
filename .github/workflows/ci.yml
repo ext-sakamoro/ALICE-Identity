@@ -44,7 +44,7 @@ jobs:
           echo "passed: ${passed}"
           if [ "${passed}" -eq 0 ]; then echo "::error::no test passed"; exit 1; fi
       - name: Law tests (semantics goldens and identifier, hash order)
-        run: scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
+        run: scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
@@ -65,7 +65,7 @@ jobs:
       - name: Test (release)
         run: cargo test --release
       - name: Law tests (release)
-        run: scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
+        run: scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
 
   float-environment:
     # ALICE-Law G14 on each OS: round-to-nearest-even and no flush-to-zero at run time in

@@ -1,7 +1,8 @@
 //! Content hash of what this crate produces for fixed keys: [`IDENTITY_SEMANTICS_ID`] (ALICE-Law G6)
 //!
 //! The recorded-bit tests in `tests/semantics_golden.rs` pin the bytes the crate produces from fixed Ed25519
-//! seeds: a device certificate, an artifact signature, a signed claim set, a `did:key` and a compact JWS.
+//! seeds: a device certificate, an artifact signature, a signed claim set, a `did:key`, a compact JWS, a contact
+//! card, an invite and a safety number.
 //! [`IDENTITY_SEMANTICS_ID`] folds those digests. The crate depends on no Law-bearing crate (alice-sign, which
 //! gives it Ed25519 and SHA-256, has no identifier), so no upstream identifier is folded. Two builds with the
 //! same identifier produce the same bytes for every pinned scenario.
@@ -9,7 +10,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 44701b17357ba7dd56b4dcddf7b55581358b205865d8033bd7d8aef0e0386f6d
+//! 76603ef9538c3d69aa813656b3f04d349132e938bb86365b0f7081ecf1f4c104
 //! ```
 //!
 //! # Fold
@@ -71,6 +72,18 @@ pub const IDENTITY_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "compact jws",
         hex32("afc7989ada00fc73b7b5f5965998b9d69d63e85be747a2e1910c3bba3ba12898"),
     ),
+    (
+        "contact card",
+        hex32("9447aa732500b4168e9103a38db05dc8d632ecbaee71e809035acae7f238f4e9"),
+    ),
+    (
+        "invite",
+        hex32("84197ce9cddf6f0a9954a09913b7f61f9234a22a9296dacab9a0603d1d87f3c1"),
+    ),
+    (
+        "safety number",
+        hex32("66fc0d6632ae406420a468bd0a22796eeda724e2ee30f7067bac24333fb323b6"),
+    ),
 ];
 
 /// The crate version and toolchain the pins were last checked against
@@ -79,4 +92,4 @@ pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("2.0.0", "1.98.1");
 /// Content hash of what this crate produces for fixed keys: the fold of [`IDENTITY_SEMANTICS_PINS`]
 /// described in the [module documentation](self)
 pub const IDENTITY_SEMANTICS_ID: [u8; 32] =
-    hex32("44701b17357ba7dd56b4dcddf7b55581358b205865d8033bd7d8aef0e0386f6d");
+    hex32("76603ef9538c3d69aa813656b3f04d349132e938bb86365b0f7081ecf1f4c104");

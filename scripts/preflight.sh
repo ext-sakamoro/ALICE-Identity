@@ -379,11 +379,11 @@ step "ci.yml / test: Test"
 )
 
 step "ci.yml / test: Law tests (semantics goldens and identifier, hash order)"
-scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
+scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
 
 step "ci.yml / release: Test (release), Law tests (release)"
 cargo test --release
-scripts/run_tests.sh semantics_golden=7,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
+scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
 
 step "ci.yml / float-environment: Float environment (debug and release)"
 scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
