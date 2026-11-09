@@ -13,7 +13,11 @@ const ISSUED_AT: u64 = 1_800_000_000;
 const NOT_AFTER: u64 = 1_800_086_400;
 const DEVICE: [u8; 32] = [9; 32];
 const NOISE: [u8; 32] = [0x4e; 32];
-const CERT_ID: [u8; 16] = [0xa5; 16];
+/// The device id of `DEVICE` under `did:alice:person-1`: SHA-256 over the documented input, computed
+/// outside this crate with Python's hashlib
+const CERT_ID: [u8; 16] = [
+    0x8a, 0x1f, 0xa0, 0xde, 0x58, 0x20, 0xc1, 0x09, 0x8a, 0x07, 0x32, 0x2a, 0xb4, 0xb7, 0x66, 0xd4,
+];
 
 fn master() -> KeyPair {
     KeyPair::from_seed([7; 32])
@@ -26,7 +30,7 @@ fn subject() -> Did {
 /// The body as the layout states it, built byte by byte
 fn expected_body(master: &KeyPair) -> Vec<u8> {
     let did = b"did:alice:person-1";
-    let mut b = vec![2u8];
+    let mut b = vec![3u8];
     b.extend_from_slice(&u16::try_from(did.len()).unwrap().to_be_bytes());
     b.extend_from_slice(did);
     b.extend_from_slice(&DEVICE);
@@ -39,16 +43,7 @@ fn expected_body(master: &KeyPair) -> Vec<u8> {
 }
 
 fn issued() -> DeviceCert {
-    DeviceCert::issue(
-        &master(),
-        &subject(),
-        DEVICE,
-        NOISE,
-        ISSUED_AT,
-        NOT_AFTER,
-        CERT_ID,
-    )
-    .unwrap()
+    DeviceCert::issue(&master(), &subject(), DEVICE, NOISE, ISSUED_AT, NOT_AFTER).unwrap()
 }
 
 #[test]
@@ -63,7 +58,7 @@ fn the_encoding_is_the_documented_layout_signed_over_the_context() {
 
     let c = issued();
     assert_eq!(DEVICE_CERT_CONTEXT, b"alice-identity device-cert v2");
-    assert_eq!(DEVICE_CERT_VERSION, 2);
+    assert_eq!(DEVICE_CERT_VERSION, 3);
     assert_eq!(c.signed_message(), signed);
     assert_eq!(c.to_bytes(), want);
     assert_eq!(c.signature(), &sig);
@@ -75,11 +70,11 @@ fn the_encoding_is_the_documented_layout_signed_over_the_context() {
             c.noise_static(),
             c.issued_at(),
             c.not_after(),
-            c.cert_id(),
+            c.device_id().as_bytes(),
             c.issuer_public()
         ),
         (
-            2,
+            3,
             &subject(),
             &DEVICE,
             &NOISE,
@@ -143,18 +138,23 @@ fn a_changed_byte_anywhere_in_the_body_or_signature_fails_the_signature() {
         }
         let mut b = bytes.clone();
         b[i] ^= 0x01;
-        // a changed subject byte may stop it being a DID: then it is rejected before the signature
-        if let Ok(c) = DeviceCert::from_bytes(&b) {
-            assert_eq!(
-                c.verify(&m, ISSUED_AT),
-                Err(DeviceCertError::BadSignature),
-                "byte {i}"
-            );
-            checked += 1;
+        // a changed subject byte may stop it being a DID: then it is rejected before the signature;
+        // a changed subject, device key or id byte no longer matches the derived device id
+        match DeviceCert::from_bytes(&b) {
+            Ok(c) => {
+                assert_eq!(
+                    c.verify(&m, ISSUED_AT),
+                    Err(DeviceCertError::BadSignature),
+                    "byte {i}"
+                );
+                checked += 1;
+            }
+            Err(DeviceCertError::DeviceIdMismatch) => checked += 1,
+            Err(_) => {}
         }
     }
     // at least every byte of the fixed fields after the subject (device key, Noise static key,
-    // times, id, signature) reached the signature check
+    // times, id, signature) was refused, by the signature or by the device id
     assert!(
         checked >= 32 + 32 + 8 + 8 + 16 + 64,
         "{checked} changed certificates checked"
@@ -211,19 +211,11 @@ fn a_non_canonical_signature_scalar_is_rejected() {
 fn issuing_needs_a_window_and_a_subject_that_reads_back() {
     let m = master();
     assert_eq!(
-        DeviceCert::issue(&m, &subject(), DEVICE, NOISE, ISSUED_AT, ISSUED_AT, CERT_ID),
+        DeviceCert::issue(&m, &subject(), DEVICE, NOISE, ISSUED_AT, ISSUED_AT),
         Err(DeviceCertError::InvalidValidity)
     );
     assert_eq!(
-        DeviceCert::issue(
-            &m,
-            &subject(),
-            DEVICE,
-            NOISE,
-            ISSUED_AT,
-            ISSUED_AT - 1,
-            CERT_ID
-        ),
+        DeviceCert::issue(&m, &subject(), DEVICE, NOISE, ISSUED_AT, ISSUED_AT - 1,),
         Err(DeviceCertError::InvalidValidity)
     );
     // `did:a:b:c` parses as method `a`, id `b:c`: a method with a colon does not read back
@@ -233,7 +225,7 @@ fn issuing_needs_a_window_and_a_subject_that_reads_back() {
         Did::new("alice", ""),
     ] {
         assert_eq!(
-            DeviceCert::issue(&m, &bad, DEVICE, NOISE, ISSUED_AT, NOT_AFTER, CERT_ID),
+            DeviceCert::issue(&m, &bad, DEVICE, NOISE, ISSUED_AT, NOT_AFTER),
             Err(DeviceCertError::InvalidSubject),
             "{bad:?}"
         );
@@ -260,11 +252,11 @@ fn decoding_rejects_every_short_input_and_trailing_bytes() {
 #[test]
 fn decoding_rejects_another_version_and_a_subject_that_is_not_a_did() {
     let bytes = issued().to_bytes();
-    let mut v3 = bytes.clone();
-    v3[0] = 3;
+    let mut v4 = bytes.clone();
+    v4[0] = 4;
     assert_eq!(
-        DeviceCert::from_bytes(&v3),
-        Err(DeviceCertError::UnsupportedVersion(3))
+        DeviceCert::from_bytes(&v4),
+        Err(DeviceCertError::UnsupportedVersion(4))
     );
 
     // same length, subject text no longer `did:...`
@@ -349,7 +341,7 @@ fn a_weak_master_key_is_refused_even_when_the_lax_equation_holds() {
     let mut s = [0u8; 32];
     s[0] = 1;
     let did = b"did:alice:person-1";
-    let mut bytes = vec![2u8];
+    let mut bytes = vec![3u8];
     bytes.extend_from_slice(&u16::try_from(did.len()).unwrap().to_be_bytes());
     bytes.extend_from_slice(did);
     bytes.extend_from_slice(&DEVICE);
@@ -376,9 +368,9 @@ fn a_weak_master_key_is_refused_even_when_the_lax_equation_holds() {
 }
 
 /// The certificate bytes for the fixed inputs above (master seed [7; 32]), recorded from the
-/// hand-assembled layout and alice-sign's deterministic Ed25519: a change to the layout, the
+/// hand-assembled layout (device id from hashlib) and alice-sign's deterministic Ed25519: a change to the layout, the
 /// context or the signature scheme changes these bytes
-const GOLDEN: &str = "0200126469643a616c6963653a706572736f6e2d3109090909090909090909090909090909090909090909090909090909090909094e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e000000006b49d200000000006b4b2380a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c1a280273b6349d48024c55b0750b96571330715b2b395ab29a2e63d2cd5dde36abef8a3d93a2a2015a83b2289ee39139948724f5668e1aa104fe19574bfd4b0c";
+const GOLDEN: &str = "0300126469643a616c6963653a706572736f6e2d3109090909090909090909090909090909090909090909090909090909090909094e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e000000006b49d200000000006b4b23808a1fa0de5820c1098a07322ab4b766d4ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c7da0437f00c967e68d2287c9929c6da915a58621290ae41fc50719ee277fd075dc38e632b9d7200052bd90ead9b54aafb3be79ee304e270f311a8a615fb93b00";
 
 #[test]
 fn the_fixed_inputs_give_the_recorded_bytes() {
@@ -422,7 +414,7 @@ fn a_version_1_certificate_is_refused_by_its_version() {
         DeviceCert::from_bytes(&v1),
         Err(DeviceCertError::UnsupportedVersion(1))
     );
-    // a version 2 length with the version byte set back to 1 is refused by the version too
+    // a version 3 length with the version byte set back to 1 is refused by the version too
     let mut back = issued().to_bytes();
     back[0] = 1;
     assert_eq!(
@@ -471,7 +463,6 @@ fn the_subject_is_bounded_at_issue() {
         NOISE,
         ISSUED_AT,
         NOT_AFTER,
-        CERT_ID,
     )
     .unwrap();
     assert_eq!(at.to_bytes().len(), MAX_DEVICE_CERT_LEN);
@@ -487,7 +478,6 @@ fn the_subject_is_bounded_at_issue() {
             NOISE,
             ISSUED_AT,
             NOT_AFTER,
-            CERT_ID,
         ),
         Err(DeviceCertError::SubjectTooLong(MAX_SUBJECT_LEN + 1))
     );
@@ -498,7 +488,7 @@ fn a_decoded_subject_over_the_bound_is_refused() {
     // a certificate laid out by hand with a subject one byte over the bound, validly signed
     let m = master();
     let did = subject_of_len(MAX_SUBJECT_LEN + 1).to_string();
-    let mut body = vec![2u8];
+    let mut body = vec![3u8];
     body.extend_from_slice(&u16::try_from(did.len()).unwrap().to_be_bytes());
     body.extend_from_slice(did.as_bytes());
     body.extend_from_slice(&DEVICE);

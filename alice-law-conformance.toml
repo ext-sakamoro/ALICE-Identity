@@ -74,7 +74,7 @@ reference_repo = "ALICE-DB"
 [G6]
 status = "pass"
 evidence = [
-    "`src/semantics.rs#pub const IDENTITY_SEMANTICS_ID` (195f53fb...15e029: the fold of `src/semantics.rs#pub const IDENTITY_SEMANTICS_PINS`, the five recorded-bit scenarios of tests/semantics_golden.rs, by the fold of alice-det-math) and `src/semantics.rs#pub const IDENTITY_SEMANTICS_CHECKED_AT` (1.2.0, 1.98.1)",
+    "`src/semantics.rs#pub const IDENTITY_SEMANTICS_ID` (44701b17...386f6d: the fold of `src/semantics.rs#pub const IDENTITY_SEMANTICS_PINS`, the five recorded-bit scenarios of tests/semantics_golden.rs, by the fold of alice-det-math) and `src/semantics.rs#pub const IDENTITY_SEMANTICS_CHECKED_AT` (2.0.0, 1.98.1)",
     "tests/identity_semantics_id.rs (7 tests: the entries are exactly the recorded goldens, the fold, the recorded value, one changed bit moves it, no cfg, version and toolchain, no golden elsewhere under tests/)",
     ".github/workflows/ci.yml Law tests steps (debug and release, x86_64 and aarch64): scripts/run_tests.sh identity_semantics_id=7",
 ]

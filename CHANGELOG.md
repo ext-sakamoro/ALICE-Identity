@@ -4,11 +4,18 @@
 
 ### 破壊的変更
 
+- 証明書の端末の識別子を発行者が与える値から、subject と device key から導く値にする: `device_id = SHA-256("alice-identity/device-id/v1" || subject の長さ (u16 BE) || subject || device_public)[..16]` (`DEVICE_ID_CONTEXT`) layout は同じで `DEVICE_CERT_VERSION` を 3 にする (version 2 は発行者が選んだ id を持つので `DeviceCertError::UnsupportedVersion(2)` で拒む) `DeviceCert::issue` は id の引数を取らず、`DeviceCert::from_bytes` は格納された id が導いた値と違うと新しい `DeviceCertError::DeviceIdMismatch` で拒む `DeviceCert::cert_id` を `DeviceCert::device_id` (`DeviceId` を返す) に置き換える 同じ鍵と subject の更新 (別の有効期間) は同じ id を持ち、発行者が 2 つの鍵に 1 つの id を与えることはできない
+- 失効の一覧は `DeviceId` で引く: `RevocationList::issue` / `contains` / `revoked` と `CertRevocations::is_revoked` は `DeviceId` を取る (符号化は同じ) id を失効させると、その subject の下のその鍵の証明書がすべての期間で失効する
+- この版をまだ受け取れない消費者 (alice-identity = "1.2.0" の要求、Cargo.lock は 1.2 のまま): ALICE-Channel / ALICE-Converse / ALICE-MLS / ALICE-Mailbox / ALICE-Sync 各々の要求を "2.0" に上げ、試験の `DeviceCert::issue` の呼び出しから id の引数を除く (src は `issue` と `cert_id` を呼ばない)
+- `IDENTITY_SEMANTICS_ID` を 44701b17… に移す (device certificate と artifact signature の pin が動く、signed claim / `did:key` / compact JWS は同じ)
+
 - `DeviceCert` の layout を version 2 にする: body の device key の次に Noise の静的鍵 `noise_static` (X25519、32 byte) を置き、master の署名に含める `DEVICE_CERT_VERSION` は 2、`DEVICE_CERT_CONTEXT` は `alice-identity device-cert v2` `DeviceCert::issue` は `noise_static` を device key の次の引数に取る version 1 の証明書は `DeviceCert::from_bytes` が `DeviceCertError::UnsupportedVersion(1)` で拒む 証明書と artifact signature は 32 byte 長くなる
 - 出力が hash の反復順に依存しないよう、map / set を順序つきにする (ALICE-Law G13) `Credential.claims` は `BTreeMap<String, String>`、`ClaimSchema.field_types` は `BTreeMap<String, String>`、`ClaimSchema::validate` の引数は `&BTreeMap<String, String>` 型の違う claim が複数ある時、`validate` は key の最も小さい claim の `InvalidClaimType` を返す `TrustGraph::trust_path` は同じ長さの経路のうち DID の小さい側を通る経路を返し、`TrustGraph::trustees_of` は DID の順に返す
 - 証明書の subject (`did:method:id` の文字列) を `MAX_SUBJECT_LEN` (255 byte) までにする `DeviceCert::issue` と `DeviceCert::from_bytes` は超える subject を `DeviceCertError::SubjectTooLong` で拒む 証明書の長さは最大 `MAX_DEVICE_CERT_LEN` (450 byte)
 
 ### Added
+
+- `device_cert::DeviceId` (16 byte、`derive` / `from_raw` / `as_bytes` / `Display` は小文字 hex) と `DEVICE_ID_CONTEXT`、試験 `tests/device_id.rs` (外部の hashlib で計算した 4 つの値、発行者が選んだ id を持つ正しく署名された証明書の拒否、version 2 の拒否、更新で同じ id、別名の subject と別の鍵で別の id、id の失効が更新にも効くこと)
 
 - `artifact::SignedArtifact` / `artifact::Verified` / `artifact::bound_digest` / `SIGNED_ARTIFACT_VERSION`: law の参照と payload を、両方を束ねる成果物署名 (`SHA-256(law_ref || SHA-256(payload))`) と 1 つの単位で送る・保存する 部分は `SignedArtifact::open` からだけ読め、open は署名を先に確かめる (受信と保存からの読み戻しが同じ関数を呼ぶ) law の参照・payload・署名の書き換えと、古い署名のまま別の参照と payload に揃えた書き換えを断る 符号化は version (1) と 3 つの部分 (u32 BE の長さ付き) 試験 `tests/signed_artifact.rs` (配置を手で組んだ oracle、書き換え 4 通り、目的・master の違い、形の崩れ)
 - `conformance/g11.toml` (ALICE-Law の `g11_table_gen.py` で生成した G11 の表) と `.github/g11-table-pin` / `scripts/g11_table.sh` (CI の clippy job と preflight で表を検査) shared-files の pin を ALICE-Law 0f545c29 に上げる

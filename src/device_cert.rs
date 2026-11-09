@@ -10,20 +10,104 @@
 //! signed = DEVICE_CERT_CONTEXT || body (the subject is at most `MAX_SUBJECT_LEN` bytes)
 //! body   = version (1) || subject length (u16 BE) || subject (UTF-8, `did:method:id`)
 //!          || device_public (32) || noise_static (32) || issued_at (u64 BE) || not_after (u64 BE)
-//!          || cert_id (16) || issuer_public (32)
+//!          || device_id (16) || issuer_public (32)
 //! bytes  = body || signature (64)
 //! ```
 //!
 //! The certificate is valid for `issued_at <= now < not_after`; the caller passes `now` (this
-//! crate reads no clock) and supplies `cert_id` (this crate draws no random numbers).
+//! crate reads no clock).
+//!
+//! # Device id
+//!
+//! The 16-byte `device_id` is not chosen by the issuer: it is derived from the subject and the device
+//! key, written into the certificate by [`DeviceCert::issue`] and checked by [`DeviceCert::from_bytes`]:
+//!
+//! ```text
+//! device_id = SHA-256(DEVICE_ID_CONTEXT || subject length (u16 BE) || subject || device_public)[..16]
+//! ```
+//!
+//! (`subject` is the `did:method:id` text, at most [`MAX_SUBJECT_LEN`] bytes.) An issuer cannot give
+//! two keys one id, and a renewal (the same key and subject, another validity) keeps its id, so
+//! revoking an id ([`crate::cert_revocation`]) retires that key for that subject in every period.
+//! Version 2 had the same layout with an issuer-chosen id and is refused as
+//! [`DeviceCertError::UnsupportedVersion`].
 
 use crate::did::Did;
-use alice_sign::{KeyPair, PublicKey, Signature};
+use alice_sign::{hash_data, KeyPair, PublicKey, Signature};
 use std::fmt;
 
 /// The only certificate layout this version reads and writes (version 1, without the Noise static
-/// key, is refused as [`DeviceCertError::UnsupportedVersion`])
-pub const DEVICE_CERT_VERSION: u8 = 2;
+/// key, and version 2, with an issuer-chosen id, are refused as [`DeviceCertError::UnsupportedVersion`])
+pub const DEVICE_CERT_VERSION: u8 = 3;
+
+/// Prefixed to the subject and device key when the device id is derived (see the module documentation)
+pub const DEVICE_ID_CONTEXT: &[u8] = b"alice-identity/device-id/v1";
+
+/// The identifier of a device key under a subject: the first 16 bytes of a SHA-256 over the subject and
+/// the key (see the module documentation)
+///
+/// A certificate carries the id of its own key ([`DeviceCert::device_id`]); revocation lists name ids.
+/// [`DeviceId::from_raw`] reads an id received as bytes; it does not make the id belong to any key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DeviceId([u8; 16]);
+
+impl DeviceId {
+    /// The id of `device_public` under `subject`
+    ///
+    /// # Errors
+    /// [`DeviceCertError::SubjectTooLong`] when the subject text is over [`MAX_SUBJECT_LEN`] bytes,
+    /// [`DeviceCertError::InvalidSubject`] when the subject does not round-trip as text
+    pub fn derive(subject: &Did, device_public: &[u8; 32]) -> Result<Self, DeviceCertError> {
+        Ok(Self::of_text(&canonical_subject(subject)?, device_public))
+    }
+
+    /// The derivation over a subject text already checked to be canonical and at most
+    /// [`MAX_SUBJECT_LEN`] bytes
+    fn of_text(subject: &str, device_public: &[u8; 32]) -> Self {
+        let len = u16::try_from(subject.len()).expect("subject length checked by the caller");
+        let mut m = Vec::with_capacity(DEVICE_ID_CONTEXT.len() + 2 + subject.len() + 32);
+        m.extend_from_slice(DEVICE_ID_CONTEXT);
+        m.extend_from_slice(&len.to_be_bytes());
+        m.extend_from_slice(subject.as_bytes());
+        m.extend_from_slice(device_public);
+        let digest = hash_data(&m).0;
+        let mut id = [0u8; 16];
+        id.copy_from_slice(&digest[..16]);
+        Self(id)
+    }
+
+    /// An id read back from its 16 bytes (as received; not checked against any key)
+    #[must_use]
+    pub const fn from_raw(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+}
+
+impl From<[u8; 16]> for DeviceId {
+    fn from(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl AsRef<[u8]> for DeviceId {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Display for DeviceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for b in &self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
+}
 
 /// The longest subject (`did:method:id` text, in bytes) a certificate takes, at issue and when decoded
 pub const MAX_SUBJECT_LEN: usize = 255;
@@ -44,7 +128,7 @@ pub struct DeviceCert {
     noise_static: [u8; 32],
     issued_at: u64,
     not_after: u64,
-    cert_id: [u8; 16],
+    device_id: DeviceId,
     issuer_public: [u8; 32],
     signature: [u8; 64],
 }
@@ -70,6 +154,8 @@ pub enum DeviceCertError {
     NotYetValid { now: u64, issued_at: u64 },
     /// `now` is at or after `not_after`
     Expired { now: u64, not_after: u64 },
+    /// The stored device id is not the one derived from the subject and the device key
+    DeviceIdMismatch,
 }
 
 impl fmt::Display for DeviceCertError {
@@ -101,6 +187,10 @@ impl fmt::Display for DeviceCertError {
             Self::Expired { now, not_after } => {
                 write!(f, "device certificate expired at {not_after} (now {now})")
             }
+            Self::DeviceIdMismatch => write!(
+                f,
+                "device certificate id is not derived from its subject and device key"
+            ),
         }
     }
 }
@@ -137,12 +227,11 @@ impl DeviceCert {
         noise_static: [u8; 32],
         issued_at: u64,
         not_after: u64,
-        cert_id: [u8; 16],
     ) -> Result<Self, DeviceCertError> {
         if not_after <= issued_at {
             return Err(DeviceCertError::InvalidValidity);
         }
-        canonical_subject(subject)?;
+        let device_id = DeviceId::of_text(&canonical_subject(subject)?, &device_public);
         let mut cert = Self {
             version: DEVICE_CERT_VERSION,
             subject: subject.clone(),
@@ -150,7 +239,7 @@ impl DeviceCert {
             noise_static,
             issued_at,
             not_after,
-            cert_id,
+            device_id,
             issuer_public: master.public().0,
             signature: [0; SIGNATURE],
         };
@@ -171,7 +260,7 @@ impl DeviceCert {
         b.extend_from_slice(&self.noise_static);
         b.extend_from_slice(&self.issued_at.to_be_bytes());
         b.extend_from_slice(&self.not_after.to_be_bytes());
-        b.extend_from_slice(&self.cert_id);
+        b.extend_from_slice(self.device_id.as_bytes());
         b.extend_from_slice(&self.issuer_public);
         b
     }
@@ -197,7 +286,8 @@ impl DeviceCert {
     /// # Errors
     /// [`DeviceCertError::Malformed`] for a short or long input or a bad subject length,
     /// [`DeviceCertError::UnsupportedVersion`], [`DeviceCertError::SubjectTooLong`],
-    /// [`DeviceCertError::InvalidSubject`]
+    /// [`DeviceCertError::InvalidSubject`], [`DeviceCertError::DeviceIdMismatch`] when the stored id
+    /// is not the one derived from the subject and the device key
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, DeviceCertError> {
         let (&version, rest) = bytes
             .split_first()
@@ -226,14 +316,19 @@ impl DeviceCert {
         let subject = Did::parse(text).map_err(|_| DeviceCertError::InvalidSubject)?;
         let field = |at: usize, n: usize| &rest[at..at + n];
         let u64_at = |at: usize| u64::from_be_bytes(field(at, 8).try_into().expect("8 bytes"));
+        let device_public: [u8; 32] = field(0, 32).try_into().expect("32 bytes");
+        let device_id = DeviceId(field(80, 16).try_into().expect("16 bytes"));
+        if device_id != DeviceId::of_text(text, &device_public) {
+            return Err(DeviceCertError::DeviceIdMismatch);
+        }
         Ok(Self {
             version,
             subject,
-            device_public: field(0, 32).try_into().expect("32 bytes"),
+            device_public,
             noise_static: field(32, 32).try_into().expect("32 bytes"),
             issued_at: u64_at(64),
             not_after: u64_at(72),
-            cert_id: field(80, 16).try_into().expect("16 bytes"),
+            device_id,
             issuer_public: field(96, 32).try_into().expect("32 bytes"),
             signature: field(128, SIGNATURE).try_into().expect("64 bytes"),
         })
@@ -300,9 +395,10 @@ impl DeviceCert {
         self.not_after
     }
 
+    /// The id of the device key under the subject (derived, see the module documentation)
     #[must_use]
-    pub const fn cert_id(&self) -> &[u8; 16] {
-        &self.cert_id
+    pub const fn device_id(&self) -> DeviceId {
+        self.device_id
     }
 
     #[must_use]

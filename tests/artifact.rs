@@ -9,7 +9,7 @@ use alice_identity::artifact::{
     MAX_CONTEXT_LEN,
 };
 use alice_identity::cert_revocation::{CertRevocations, RevocationList};
-use alice_identity::device_cert::{DeviceCert, DeviceCertError};
+use alice_identity::device_cert::{DeviceCert, DeviceCertError, DeviceId};
 use alice_identity::device_cert::{MAX_DEVICE_CERT_LEN, MAX_SUBJECT_LEN};
 use alice_identity::did::Did;
 use alice_sign::{KeyPair, PublicKey, Signature};
@@ -17,7 +17,6 @@ use alice_sign::{KeyPair, PublicKey, Signature};
 const ISSUED_AT: u64 = 1_800_000_000;
 const NOT_AFTER: u64 = 1_800_086_400;
 const NOW: u64 = 1_800_000_100;
-const CERT_ID: [u8; 16] = [0xa5; 16];
 const NOISE: [u8; 32] = [0x4e; 32];
 const CONTEXT: &[u8] = b"alice-mls/artifact/v1";
 
@@ -29,7 +28,7 @@ fn device() -> KeyPair {
     KeyPair::from_seed([8; 32])
 }
 
-fn cert_with(device_public: [u8; 32], cert_id: [u8; 16]) -> DeviceCert {
+fn cert_with(device_public: [u8; 32]) -> DeviceCert {
     let subject = Did::parse("did:alice:person-1").unwrap();
     DeviceCert::issue(
         &master(),
@@ -38,13 +37,12 @@ fn cert_with(device_public: [u8; 32], cert_id: [u8; 16]) -> DeviceCert {
         NOISE,
         ISSUED_AT,
         NOT_AFTER,
-        cert_id,
     )
     .unwrap()
 }
 
 fn cert() -> DeviceCert {
-    cert_with(device().public().0, CERT_ID)
+    cert_with(device().public().0)
 }
 
 fn digest() -> PayloadDigest {
@@ -236,7 +234,17 @@ fn a_tampered_signature_is_refused() {
 #[test]
 fn a_signature_does_not_move_to_another_certificate_of_the_same_device_key() {
     let s = signed();
-    let other_cert = cert_with(device().public().0, [0x5a; 16]);
+    // a renewal: the same key and subject (so the same device id) under another validity
+    let other_cert = DeviceCert::issue(
+        &master(),
+        &Did::parse("did:alice:person-1").unwrap(),
+        device().public().0,
+        NOISE,
+        ISSUED_AT + 1,
+        NOT_AFTER,
+    )
+    .unwrap();
+    assert_eq!(other_cert.device_id(), cert().device_id());
     let moved_bytes = expected_bytes(CONTEXT, digest().bytes(), &other_cert, s.signature());
     let moved = ArtifactSignature::from_bytes(&moved_bytes).unwrap();
     assert_eq!(verify(&moved), Err(ArtifactError::BadSignature));
@@ -304,7 +312,7 @@ fn a_revoked_certificate_is_refused() {
     let mut revocations = CertRevocations::new();
     revocations
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[CERT_ID]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]),
             &m.public(),
         )
         .unwrap();
@@ -322,7 +330,7 @@ fn a_revoked_certificate_is_refused() {
     let mut others = CertRevocations::new();
     others
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[[0x5a; 16]]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[DeviceId::from_raw([0x5a; 16])]),
             &m.public(),
         )
         .unwrap();
@@ -460,7 +468,7 @@ fn a_weak_device_key_is_refused_even_when_the_lax_equation_holds() {
     let mut sig = [0u8; 64];
     sig[..32].copy_from_slice(&b);
     sig[32..].copy_from_slice(&s);
-    let weak_cert = cert_with(identity, CERT_ID);
+    let weak_cert = cert_with(identity);
     let bytes = expected_bytes(CONTEXT, digest().bytes(), &weak_cert, &sig);
     let forged = ArtifactSignature::from_bytes(&bytes).unwrap();
     let weak = PublicKey(identity);
@@ -483,7 +491,6 @@ fn the_longest_subject_a_certificate_takes_fits_an_artifact_signature() {
         NOISE,
         ISSUED_AT,
         NOT_AFTER,
-        CERT_ID,
     )
     .unwrap();
     assert_eq!(longest.to_bytes().len(), MAX_DEVICE_CERT_LEN);
@@ -499,9 +506,10 @@ fn the_longest_subject_a_certificate_takes_fits_an_artifact_signature() {
 }
 
 #[test]
-fn a_signature_does_not_move_to_another_issuers_certificate_for_the_same_key_and_id() {
-    // another master issues its own certificate for the victim's device key, with the same
-    // certificate id and its own subject, and swaps it in: the signature must not follow
+fn a_signature_does_not_move_to_another_issuers_certificate_for_the_same_key() {
+    // another master issues its own certificate for the victim's device key under its own subject
+    // and swaps it in: the signature must not follow (its device id differs, as it is derived from
+    // the subject)
     let s = signed();
     let other_master = KeyPair::from_seed([12; 32]);
     let other_subject = Did::parse("did:alice:someone-else").unwrap();
@@ -512,10 +520,9 @@ fn a_signature_does_not_move_to_another_issuers_certificate_for_the_same_key_and
         NOISE,
         ISSUED_AT,
         NOT_AFTER,
-        CERT_ID,
     )
     .unwrap();
-    assert_eq!(foreign.cert_id(), cert().cert_id());
+    assert_ne!(foreign.device_id(), cert().device_id());
     let swapped_bytes = expected_bytes(CONTEXT, digest().bytes(), &foreign, s.signature());
     let swapped = ArtifactSignature::from_bytes(&swapped_bytes).unwrap();
     assert_eq!(
@@ -538,7 +545,7 @@ fn revocation_is_checked_only_when_a_list_is_given_and_skipping_it_is_explicit()
     let mut revoking = CertRevocations::new();
     revoking
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[CERT_ID]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]),
             &m.public(),
         )
         .unwrap();

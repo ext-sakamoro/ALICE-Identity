@@ -9,7 +9,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 195f53fb4e6e8925246aab5037b41d17f792e8a2d14e2f439adaf4bf0815e029
+//! 44701b17357ba7dd56b4dcddf7b55581358b205865d8033bd7d8aef0e0386f6d
 //! ```
 //!
 //! # Fold
@@ -53,11 +53,11 @@ const fn hex32(s: &str) -> [u8; 32] {
 pub const IDENTITY_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "device certificate",
-        hex32("5b007b2cc3f4e2238774eed0b02fa7c710b03e8e2251916740b46427c5cda418"),
+        hex32("dc0b1a57f0084d634ad3c9bcdfd3f7443587ce95d87bb52a886a9af9b15bb865"),
     ),
     (
         "artifact signature",
-        hex32("5c7e5cdbc180d7f888b1ea8e374b3a3ab3d8b6629101adfb33a654dbf2696b70"),
+        hex32("8d729c5a075d67f21773de9011ffced0f097f5aa0bd26907653cb36732004ccc"),
     ),
     (
         "signed claim",
@@ -74,9 +74,9 @@ pub const IDENTITY_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 ];
 
 /// The crate version and toolchain the pins were last checked against
-pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("1.2.0", "1.98.1");
+pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("2.0.0", "1.98.1");
 
 /// Content hash of what this crate produces for fixed keys: the fold of [`IDENTITY_SEMANTICS_PINS`]
 /// described in the [module documentation](self)
 pub const IDENTITY_SEMANTICS_ID: [u8; 32] =
-    hex32("195f53fb4e6e8925246aab5037b41d17f792e8a2d14e2f439adaf4bf0815e029");
+    hex32("44701b17357ba7dd56b4dcddf7b55581358b205865d8033bd7d8aef0e0386f6d");
