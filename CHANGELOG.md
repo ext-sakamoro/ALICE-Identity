@@ -33,6 +33,7 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
+- 検証の変更: `DeviceCert::verify` は `issued_at <= now + MAX_CLOCK_SKEW_SECS` (600 秒) を受け入れる 時計が進んだ端末で今の時刻で発行された証明書を、時計が遅れた検証側がすぐに受け入れる 猶予は始まりだけで `not_after` には無い (`now < not_after` のまま)、失効の検査は変わらない `IDENTITY_SEMANTICS_ID` は作る bytes の識別子なので動かない 試験 `tests/clock_skew.rs` (600 秒先は受け入れ、601 秒先は `NotYetValid`、`not_after` が now と now - 1 は `Expired`) 変異 2 件 (猶予を `not_after` にも足す、始まりの境界を 1 秒ずらす) は red
 - CI: `actions/cache` を v6 に (v5 は廃止予定の node20 で動き、actionlint が error にする)
 - 依存: alice-sign を rev の固定から `branch = "main"` に変える (同じ alice-sign を引く他の crate と同じ取り方にして、1 つの build に alice-sign が 1 つだけ入るようにする) 使う commit は Cargo.lock が決める
 - CI (ALICE-Law G9 / G11): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした 他の共有の file も ALICE-Law 40973a8a の表が計画した bytes にし、shared-files と G11 の表の pin を上げた

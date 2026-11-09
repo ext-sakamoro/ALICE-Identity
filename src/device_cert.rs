@@ -14,8 +14,9 @@
 //! bytes  = body || signature (64)
 //! ```
 //!
-//! The certificate is valid for `issued_at <= now < not_after`; the caller passes `now` (this
-//! crate reads no clock).
+//! The certificate is valid for `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`; the caller
+//! passes `now` (this crate reads no clock). The leeway at the start lets a verifier whose clock runs behind the
+//! issuer's accept a certificate issued a moment ago; the end of the window has no leeway.
 //!
 //! # Device id
 //!
@@ -39,6 +40,13 @@ use std::fmt;
 /// The only certificate layout this version reads and writes (version 1, without the Noise static
 /// key, and version 2, with an issuer-chosen id, are refused as [`DeviceCertError::UnsupportedVersion`])
 pub const DEVICE_CERT_VERSION: u8 = 3;
+
+/// The verifier's leeway for a certificate's start, in seconds.
+///
+/// A certificate whose `issued_at` is up to this far ahead of the verifier's `now` is accepted, so a device
+/// certified on a clock that runs ahead can be used at once by verifiers whose clocks run behind. It applies to
+/// `issued_at` only; `not_after` has no leeway.
+pub const MAX_CLOCK_SKEW_SECS: u64 = 600;
 
 /// Prefixed to the subject and device key when the device id is derived (see the module documentation)
 pub const DEVICE_ID_CONTEXT: &[u8] = b"alice-identity/device-id/v1";
@@ -335,7 +343,7 @@ impl DeviceCert {
     }
 
     /// Accept the certificate only if it was issued by `master`, its signature verifies strictly
-    /// over the context and body, and `issued_at <= now < not_after`
+    /// over the context and body, `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`
     ///
     /// # Errors
     /// The first failing check, in this order: version, issuer, signature, validity window
@@ -349,7 +357,8 @@ impl DeviceCert {
         if !master.verify_strict(&self.signed_message(), &Signature(self.signature)) {
             return Err(DeviceCertError::BadSignature);
         }
-        if now < self.issued_at {
+        // the start has the clock-skew leeway, the end has none
+        if now.saturating_add(MAX_CLOCK_SKEW_SECS) < self.issued_at {
             return Err(DeviceCertError::NotYetValid {
                 now,
                 issued_at: self.issued_at,

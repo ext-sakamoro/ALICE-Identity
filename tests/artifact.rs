@@ -269,13 +269,25 @@ fn the_certificate_is_checked_at_the_verifiers_time_and_against_the_master() {
             &m,
             CONTEXT,
             &digest(),
-            ISSUED_AT - 1,
+            ISSUED_AT - 601,
             Revocation::NoListAvailable
         ),
         Err(ArtifactError::Cert(DeviceCertError::NotYetValid {
-            now: ISSUED_AT - 1,
+            now: ISSUED_AT - 601,
             issued_at: ISSUED_AT
         }))
+    );
+    // within the 600-second clock-skew leeway before the start, the certificate is accepted
+    assert_eq!(
+        verify_artifact(
+            &s,
+            &m,
+            CONTEXT,
+            &digest(),
+            ISSUED_AT - 600,
+            Revocation::NoListAvailable
+        ),
+        Ok(())
     );
     assert_eq!(
         verify_artifact(

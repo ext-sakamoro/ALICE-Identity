@@ -93,15 +93,17 @@ fn bytes_read_back_as_the_same_certificate() {
 }
 
 #[test]
-fn it_is_valid_from_issued_at_until_just_before_not_after() {
+fn it_is_valid_from_issued_at_less_the_skew_leeway_until_just_before_not_after() {
     let c = issued();
     let m = master().public();
     assert_eq!(c.verify(&m, ISSUED_AT), Ok(()));
     assert_eq!(c.verify(&m, NOT_AFTER - 1), Ok(()));
+    // the start has the 600-second clock-skew leeway
+    assert_eq!(c.verify(&m, ISSUED_AT - 600), Ok(()));
     assert_eq!(
-        c.verify(&m, ISSUED_AT - 1),
+        c.verify(&m, ISSUED_AT - 601),
         Err(DeviceCertError::NotYetValid {
-            now: ISSUED_AT - 1,
+            now: ISSUED_AT - 601,
             issued_at: ISSUED_AT
         })
     );
