@@ -54,7 +54,7 @@ reason = "the domain, context, digest and certificate bytes the signature covers
 file = "src/artifact.rs"
 name = "to_bytes"
 class = "artifact signature"
-reason = "the encoding of the artifact signature"
+reason = "the encoding of an artifact signature (ArtifactSignature::to_bytes), and of a signed artifact: version, law reference, payload and that artifact signature (SignedArtifact::to_bytes); both write what this crate signed, nothing is read"
 
 [[function]]
 file = "src/artifact.rs"
