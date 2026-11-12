@@ -45,6 +45,7 @@ pub struct RevocationList {
 }
 
 /// Why a list was not decoded or accepted
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RevocationListError {
     /// The layout version is not [`REVOCATION_LIST_VERSION`]
@@ -133,8 +134,18 @@ impl RevocationList {
         issued_at: u64,
         more: &[DeviceId],
     ) -> Result<Self, RevocationListError> {
-        let _ = (master, issued_at, more);
-        todo!("STUB: extending a revocation list (device-loss recovery step 2)")
+        if master.public().0 != self.issuer_public {
+            return Err(RevocationListError::IssuerMismatch);
+        }
+        let sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or(RevocationListError::Malformed(
+                "sequence: the last list cannot be extended",
+            ))?;
+        let mut ids = self.revoked.clone();
+        ids.extend_from_slice(more);
+        Ok(Self::issue(master, sequence, issued_at, &ids))
     }
 
     /// The bytes the signature covers: [`REVOCATION_LIST_CONTEXT`] followed by the body
@@ -296,7 +307,17 @@ impl CertRevocations {
                     })
                 }
             }
-            _ => {
+            Some(kept) => {
+                // a revocation is never taken back: a newer list must keep every device the kept one revokes
+                if let Some(dropped) = kept.revoked.iter().find(|id| !list.contains(id)) {
+                    return Err(RevocationListError::DropsRevoked {
+                        device_id: *dropped,
+                    });
+                }
+                self.lists.insert(master.0, list);
+                Ok(Accepted::Replaced)
+            }
+            None => {
                 self.lists.insert(master.0, list);
                 Ok(Accepted::Replaced)
             }

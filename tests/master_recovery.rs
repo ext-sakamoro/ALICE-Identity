@@ -49,10 +49,15 @@ fn assert_same_identity(recovered: &KeyPair, original: &KeyPair) -> usize {
 /// A share with y byte `at` changed and the byte-form check recomputed (layout: version, threshold, x,
 /// split id 16, u32 length, y, then the first 16 bytes of BLAKE3 of all that)
 fn forged(share: &Shard, at: usize) -> Shard {
+    forged_by(share, at, 0x5a)
+}
+
+/// [`forged`] with the change `delta`
+fn forged_by(share: &Shard, at: usize, delta: u8) -> Shard {
     let mut b = share.to_bytes().expect("bytes").to_vec();
     let y0 = 3 + 16 + 4;
     let end = b.len() - 16;
-    b[y0 + at] ^= 0x5a;
+    b[y0 + at] ^= delta;
     let check = alice_crypto::hash(&b[..end]);
     b[end..].copy_from_slice(&check.as_bytes()[..16]);
     Shard::from_bytes(&b).expect("a well-formed share")
@@ -107,6 +112,25 @@ fn a_wrong_code_a_changed_blob_or_another_did_is_refused() {
     assert_eq!(compared, 3 + bytes.len() + 2);
 }
 
+/// A blob that names this DID's key in its header but seals another seed (bound to that header, under a code the
+/// holder knows) opens and is still refused: the seed's own key is checked against the DID
+#[test]
+fn a_blob_that_claims_this_did_but_holds_another_seed_is_refused() {
+    let (k, did) = original();
+    let other_seed = [0x43u8; 32];
+    let mut ad = alice_identity::master_recovery::MASTER_RECOVERY_CONTEXT.to_vec();
+    ad.extend_from_slice(&k.public().0);
+    let sealed =
+        alice_crypto::recovery_code::seal_secret(&code(1), &other_seed, &ad).expect("seals");
+    let mut bytes = k.public().0.to_vec();
+    bytes.extend_from_slice(&sealed);
+    let blob = MasterRecoveryBlob::from_bytes(&bytes).expect("reads");
+    assert_eq!(
+        blob.open(&code(1), &did).map(|_| ()),
+        Err(MasterRecoveryError::NotThisIdentity)
+    );
+}
+
 #[test]
 fn three_of_five_shares_bring_the_key_back_and_two_do_not() {
     let (k, did) = original();
@@ -158,11 +182,12 @@ fn a_changed_share_is_refused_by_the_did_and_named_when_more_are_given() {
         assert_eq!(r.inconsistent, vec![shares[1].x()]);
         compared += 2;
     }
-    // k + 1 with two forged: no 3 of them give the DID's key
+    // k + 1 with two forged in different bytes (their changes cannot cancel: each byte has one changed share), so
+    // every set of 3 holds a changed byte and none gives the DID's key
     let four = [
         shares[0].clone(),
         forged(&shares[1], 0),
-        forged(&shares[2], 0),
+        forged(&shares[2], 13),
         shares[3].clone(),
     ];
     assert_eq!(
@@ -171,6 +196,70 @@ fn a_changed_share_is_refused_by_the_did_and_named_when_more_are_given() {
     );
     compared += 1;
     assert_eq!(compared, 3 * 4 + 1);
+}
+
+/// With at least k genuine shares every changed share is named: 6 of 3 with two changed (in different bytes)
+#[test]
+fn with_k_genuine_shares_every_changed_share_is_named() {
+    let (k, did) = original();
+    let shares = split_master(&SEED, 6, 3).expect("splits");
+    let mut given = shares.clone();
+    given[1] = forged(&shares[1], 0);
+    given[4] = forged(&shares[4], 7);
+    let r = recover_master(&given, &did).expect("4 genuine of 6");
+    let compared = assert_same_identity(&r.key, &k);
+    assert_eq!(r.inconsistent, vec![shares[1].x(), shares[4].x()]);
+    // every pair changed alike (the same change in the same byte, so some sets of 3 through both cancel out and
+    // give the DID's key): the genuine 4 still win and exactly the pair is named
+    let mut pairs = 0;
+    for i in 0..6 {
+        for j in i + 1..6 {
+            let mut given = shares.clone();
+            given[i] = forged(&shares[i], 0);
+            given[j] = forged(&shares[j], 0);
+            let r = recover_master(&given, &did).expect("4 genuine of 6");
+            assert_same_identity(&r.key, &k);
+            assert_eq!(
+                r.inconsistent,
+                vec![shares[i].x(), shares[j].x()],
+                "pair {i} {j}"
+            );
+            pairs += 1;
+        }
+    }
+    assert_eq!(pairs, 15);
+    // and with every share genuine none is named
+    let r = recover_master(&shares, &did).expect("6 genuine");
+    assert!(r.inconsistent.is_empty());
+    assert_eq!(compared + 2, 4);
+}
+
+/// Changed shares that cancel out (the same change in the same byte of two shares, every change tried) never bring
+/// back any key but the DID's: each call either refuses or returns the original key
+#[test]
+fn changes_that_cancel_out_never_bring_back_another_key() {
+    let (k, did) = original();
+    let shares = split_master(&SEED, 5, 3).expect("splits");
+    let (mut returned, mut refused) = (0, 0);
+    for delta in 1..=255u8 {
+        let given = [
+            shares[0].clone(),
+            forged_by(&shares[1], 0, delta),
+            forged_by(&shares[2], 0, delta),
+            shares[3].clone(),
+        ];
+        match recover_master(&given, &did) {
+            Ok(r) => {
+                assert_same_identity(&r.key, &k);
+                returned += 1;
+            }
+            Err(e) => {
+                assert_eq!(e, MasterRecoveryError::NoConsistentSet, "delta {delta}");
+                refused += 1;
+            }
+        }
+    }
+    assert_eq!(returned + refused, 255);
 }
 
 #[test]

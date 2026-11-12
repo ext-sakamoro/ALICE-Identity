@@ -1,6 +1,6 @@
 [package]
 name = "alice-identity"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2021"
 rust-version = "1.88"
 license = "LicenseRef-Proprietary"
@@ -18,7 +18,7 @@ alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sig
 # SHA-256 of the safety number and of the contact card short code: alice-crypto (LicenseRef-Proprietary), by git from
 # its main like alice-sign; only its `sha256` module, without its default features (no `rng`): it links no OS random source, so the crate
 # still builds for wasm32-unknown-unknown
-alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", rev = "7fd50ced53fe784f2876f0aa9c9679f26888fa90", default-features = false, features = ["sha256"] }
+alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", rev = "7d840d9ff827c3b142bce85892d61915c7506d05", default-features = false, features = ["sha256"] }
 
 [features]
 # device-loss recovery of the master key (master_recovery): sealing under a recovery code and splitting into

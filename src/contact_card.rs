@@ -63,6 +63,7 @@ pub struct ContactCard {
 }
 
 /// Why a card was not made, decoded or accepted
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContactCardError {
     /// The layout version is not [`CONTACT_CARD_VERSION`]

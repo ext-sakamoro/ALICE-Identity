@@ -101,6 +101,7 @@ pub fn sha256_payload(payload: &[u8]) -> PayloadDigest {
 }
 
 /// Why an artifact signature was not made, decoded or accepted
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArtifactError {
     /// The context is empty, longer than [`MAX_CONTEXT_LEN`], not printable ASCII, or starts or
