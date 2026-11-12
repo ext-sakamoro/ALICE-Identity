@@ -177,9 +177,8 @@ impl MasterRecoveryBlob {
         expected: &Did,
     ) -> Result<KeyPair, MasterRecoveryError> {
         let want = did_key(expected)?;
-        if self.master_public != want.0 {
-            return Err(MasterRecoveryError::NotThisIdentity);
-        }
+        // the seed's own key is the check (a blob of another DID, or one whose header claims this DID over another
+        // seed, ends there)
         let seed = open_secret(code, &self.sealed, &aad(&self.master_public))
             .map_err(MasterRecoveryError::Code)?;
         key_of(&seed, &want)
@@ -231,6 +230,20 @@ pub fn recover_master(
             key,
             inconsistent: Vec::new(),
         });
+    }
+    // every share on one polynomial whose seed is the DID's: k - 1 of them and each other share give that seed
+    if let Ok(key) = key_of(&all, &want) {
+        let on_one = shares[k - 1..].iter().all(|s| {
+            let mut probe: Vec<Shard> = shares[..k - 1].to_vec();
+            probe.push(s.clone());
+            alice_crypto::recover(&probe).is_ok_and(|p| *p == *all)
+        });
+        if on_one {
+            return Ok(RecoveredMaster {
+                key,
+                inconsistent: Vec::new(),
+            });
+        }
     }
     if binomial(shares.len() as u64, k as u64) > MAX_RECOVERY_SETS {
         return Err(MasterRecoveryError::TooManyShares);

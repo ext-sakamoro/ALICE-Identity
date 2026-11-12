@@ -262,6 +262,23 @@ fn changes_that_cancel_out_never_bring_back_another_key() {
     assert_eq!(returned + refused, 255);
 }
 
+/// Many shares: 20 genuine shares of 10 come back at once (all on one polynomial), while 20 with one changed would
+/// need C(20, 10) = 184756 sets, more than `MAX_RECOVERY_SETS`, and are refused rather than searched without bound
+#[test]
+fn many_genuine_shares_recover_and_an_unbounded_search_is_refused() {
+    let (k, did) = original();
+    let shares = split_master(&SEED, 20, 10).expect("splits");
+    let r = recover_master(&shares, &did).expect("20 genuine");
+    assert_same_identity(&r.key, &k);
+    assert!(r.inconsistent.is_empty());
+    let mut given = shares.clone();
+    given[15] = forged(&shares[15], 3);
+    assert_eq!(
+        recover_master(&given, &did).map(|_| ()),
+        Err(MasterRecoveryError::TooManyShares)
+    );
+}
+
 #[test]
 fn a_device_revoked_before_the_loss_stays_revoked_after_recovery() {
     let (k, did) = original();
