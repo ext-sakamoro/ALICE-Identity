@@ -314,3 +314,43 @@ fn the_fixed_inputs_give_the_recorded_bytes() {
     assert_eq!(hex.len(), 2 * (1 + 32 + 8 + 8 + 4 + 3 * 16 + 64));
     assert_eq!(hex, GOLDEN);
 }
+
+/// A revocation is never taken back: a newer list from the same master that leaves out a device the kept list
+/// revokes is refused and the kept list stays (a master brought back without the latest list cannot undo it);
+/// a newer list that keeps every revoked device and adds one is accepted. Oracle: the rule as stated, counted.
+#[test]
+fn a_newer_list_that_drops_a_revoked_device_is_refused_and_the_kept_one_stays() {
+    let m = master();
+    let pk = m.public();
+    let mut r = CertRevocations::new();
+    assert_eq!(
+        r.accept(RevocationList::issue(&m, 3, AT, &[id(1), id(2)]), &pk),
+        Ok(Accepted::Replaced)
+    );
+    let mut compared = 0;
+    for (seq, ids, dropped) in [
+        (4u64, vec![id(2)], id(1)),
+        (5, vec![id(1)], id(2)),
+        (9, vec![id(3)], id(1)),
+        (u64::MAX, vec![], id(1)),
+    ] {
+        assert_eq!(
+            r.accept(RevocationList::issue(&m, seq, AT, &ids), &pk),
+            Err(RevocationListError::DropsRevoked { device_id: dropped }),
+            "sequence {seq}"
+        );
+        assert_eq!(r.sequence(&pk), Some(3));
+        assert!(r.is_revoked(&pk, &id(1)) && r.is_revoked(&pk, &id(2)));
+        compared += 1;
+    }
+    assert_eq!(
+        r.accept(
+            RevocationList::issue(&m, 4, AT, &[id(1), id(2), id(3)]),
+            &pk
+        ),
+        Ok(Accepted::Replaced)
+    );
+    assert!(r.is_revoked(&pk, &id(3)));
+    compared += 1;
+    assert_eq!(compared, 5);
+}

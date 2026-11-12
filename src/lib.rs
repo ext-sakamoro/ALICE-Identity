@@ -32,6 +32,8 @@ pub mod errors;
 pub mod invite;
 pub mod jws;
 pub mod master_key;
+#[cfg(feature = "recovery")]
+pub mod master_recovery;
 pub mod prelude;
 pub mod presentation;
 pub mod public_key;

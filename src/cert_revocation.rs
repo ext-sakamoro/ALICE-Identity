@@ -57,6 +57,9 @@ pub enum RevocationListError {
     BadSignature,
     /// Another list from the same master has the same sequence and different content
     Conflict { sequence: u64 },
+    /// A newer list from the same master leaves out a device the kept list revokes (a revocation is never taken
+    /// back; the kept list stays)
+    DropsRevoked { device_id: DeviceId },
 }
 
 impl fmt::Display for RevocationListError {
@@ -71,6 +74,10 @@ impl fmt::Display for RevocationListError {
             Self::Conflict { sequence } => write!(
                 f,
                 "a different revocation list with sequence {sequence} is already kept"
+            ),
+            Self::DropsRevoked { device_id } => write!(
+                f,
+                "a newer revocation list leaves out the revoked device {device_id}"
             ),
         }
     }
@@ -112,6 +119,22 @@ impl RevocationList {
             b.extend_from_slice(id.as_bytes());
         }
         b
+    }
+
+    /// The next list from the same master: every device this list revokes and `more`, at the next sequence.
+    ///
+    /// # Errors
+    ///
+    /// [`RevocationListError::IssuerMismatch`] when `master` is not this list's issuer, [`RevocationListError::Malformed`]
+    /// when the sequence is already `u64::MAX`.
+    pub fn extend(
+        &self,
+        master: &KeyPair,
+        issued_at: u64,
+        more: &[DeviceId],
+    ) -> Result<Self, RevocationListError> {
+        let _ = (master, issued_at, more);
+        todo!("STUB: extending a revocation list (device-loss recovery step 2)")
     }
 
     /// The bytes the signature covers: [`REVOCATION_LIST_CONTEXT`] followed by the body

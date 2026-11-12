@@ -18,4 +18,10 @@ alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sig
 # SHA-256 of the safety number and of the contact card short code: alice-crypto (LicenseRef-Proprietary), by git from
 # its main like alice-sign; only its `sha256` module, without its default features (no `rng`): it links no OS random source, so the crate
 # still builds for wasm32-unknown-unknown
-alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", branch = "main", default-features = false, features = ["sha256"] }
+alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", rev = "7fd50ced53fe784f2876f0aa9c9679f26888fa90", default-features = false, features = ["sha256"] }
+
+[features]
+# device-loss recovery of the master key (master_recovery): sealing under a recovery code and splitting into
+# shares need the operating system's random source, so it is off by default (the crate builds for
+# wasm32-unknown-unknown without it)
+recovery = ["alice-crypto/aead", "alice-crypto/hash", "alice-crypto/rng"]
