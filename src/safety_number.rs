@@ -41,6 +41,7 @@ pub struct SafetyNumber {
 }
 
 /// Why no safety number was computed
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SafetyNumberError {
     /// Both keys are the same key: there is no second party to compare with

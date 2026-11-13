@@ -142,6 +142,7 @@ pub struct DeviceCert {
 }
 
 /// Why a certificate was not issued, decoded or accepted
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceCertError {
     /// The layout version is not [`DEVICE_CERT_VERSION`]

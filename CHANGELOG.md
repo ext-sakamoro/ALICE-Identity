@@ -4,6 +4,10 @@
 
 ### 破壊的変更
 
+- 版を 3.0.0 にする 利用側は `alice-identity` の要求を "3.0" に上げる (git main から取る crate も同じ、"2.0" のままでは解決しない)
+- 公開の error enum 8 つ (`IdentityError` / `RevocationListError` / `DeviceCertError` / `InviteError` / `ContactCardError` / `ArtifactError` / `SafetyNumberError` / `ResolveError`) を `#[non_exhaustive]` にする crate の外で網羅 match している箇所は `_` の腕が要る 以後 variant を足しても破壊的変更にならない
+- 失効は戻らない: `CertRevocations::accept` は、保持中の一覧が失効させている端末を 1 つでも落とす新しい一覧 (sequence が高くても) を `RevocationListError::DropsRevoked { device_id }` (新しい variant) で拒否し、保持中の一覧を残す 以前は sequence が高ければ受け入れたので、新しい一覧で失効を取り消せた
+
 - 証明書の端末の識別子を発行者が与える値から、subject と device key から導く値にする: `device_id = SHA-256("alice-identity/device-id/v1" || subject の長さ (u16 BE) || subject || device_public)[..16]` (`DEVICE_ID_CONTEXT`) layout は同じで `DEVICE_CERT_VERSION` を 3 にする (version 2 は発行者が選んだ id を持つので `DeviceCertError::UnsupportedVersion(2)` で拒む) `DeviceCert::issue` は id の引数を取らず、`DeviceCert::from_bytes` は格納された id が導いた値と違うと新しい `DeviceCertError::DeviceIdMismatch` で拒む `DeviceCert::cert_id` を `DeviceCert::device_id` (`DeviceId` を返す) に置き換える 同じ鍵と subject の更新 (別の有効期間) は同じ id を持ち、発行者が 2 つの鍵に 1 つの id を与えることはできない
 - 失効の一覧は `DeviceId` で引く: `RevocationList::issue` / `contains` / `revoked` と `CertRevocations::is_revoked` は `DeviceId` を取る (符号化は同じ) id を失効させると、その subject の下のその鍵の証明書がすべての期間で失効する
 - 下流の利用側は 2.0 に移る必要がある: `DeviceCert::issue` は id の引数を取らず、証明書は version 3
@@ -14,6 +18,8 @@
 - 証明書の subject (`did:method:id` の文字列) を `MAX_SUBJECT_LEN` (255 byte) までにする `DeviceCert::issue` と `DeviceCert::from_bytes` は超える subject を `DeviceCertError::SubjectTooLong` で拒む 証明書の長さは最大 `MAX_DEVICE_CERT_LEN` (450 byte)
 
 ### Added
+
+- `RevocationList::extend(master, issued_at, more)`: 前の一覧の端末を全部持ち、`more` を足して次の sequence で署名した一覧 発行者でない鍵は `IssuerMismatch`、sequence が `u64::MAX` の一覧は `Malformed`
 
 - `contact_card::ContactCard`: 人に渡す連絡先カード (QR / 貼り付け) 中身は did:key・master key・端末証明書 (1〜`MAX_CARD_CERTS` = 16 枚)・失効の一覧だけで、人が書き込む欄 (名前・画像・住所) は無い master が署名し (`CONTACT_CARD_CONTEXT`)、`from_bytes` は subject が master の did:key であること・署名・各証明書の発行者と subject・失効の一覧の発行者・失効した端末を載せていないことを確かめる `verify(now)` は各証明書を `now` で確かめる 文字列形 `ALICE-CARD:1:` + base32 (RFC 4648、大文字、padding なし、QR の英数字 mode に入る)、照合用の短い code `short_code()` (SHA-256 の先頭 40 bit を Crockford base32 で `XXXX-XXXX`)
 - `invite::Invite` / `InviteRedemptions`: 1 回限りの署名付き招待 (did:key・鍵・呼び出し側が渡す 16 byte の id・有効期間、`INVITE_CONTEXT`) 有効期間は端末証明書と同じ規則 (始まりに `MAX_CLOCK_SKEW_SECS` の猶予、終わりは無し) 発行者の `InviteRedemptions` が `redeem` で 1 回だけ受け (2 回目は `AlreadyRedeemed`、他の発行者のものは `WrongIssuer`)、`cancel(invite_id)` で使う前に取り消し (`Cancelled`)、`prune(now)` で期限切れの記録を捨てる 文字列形 `ALICE-INVITE:1:` + base32

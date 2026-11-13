@@ -6,6 +6,7 @@ use std::fmt;
 // Error
 // ---------------------------------------------------------------------------
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityError {
     InvalidDid(String),

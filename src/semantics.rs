@@ -87,7 +87,7 @@ pub const IDENTITY_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 ];
 
 /// The crate version and toolchain the pins were last checked against
-pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("2.0.0", "1.98.1");
+pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("3.0.0", "1.98.1");
 
 /// Content hash of what this crate produces for fixed keys: the fold of [`IDENTITY_SEMANTICS_PINS`]
 /// described in the [module documentation](self)

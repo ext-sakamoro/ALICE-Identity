@@ -15,6 +15,7 @@ use std::fmt;
 pub const MASTER_KEY_FRAGMENT: &str = "#master";
 
 /// Why a DID's master key could not be resolved
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
     /// No document for the DID

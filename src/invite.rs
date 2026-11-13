@@ -51,6 +51,7 @@ pub struct Invite {
 }
 
 /// Why an invite was not made, decoded, accepted or redeemed
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InviteError {
     /// The layout version is not [`INVITE_VERSION`]
