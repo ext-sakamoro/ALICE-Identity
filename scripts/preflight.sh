@@ -709,6 +709,16 @@ relint
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; python3 scripts/clippy_external_coverage.py )
 )
 
+step "ci.yml / clippy: Upstream previous identifiers (test, then whole-list uses only)"
+(
+  gh_step ci.yml.clippy
+(
+  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"
+  python3 scripts/test_upstream_previous_ids_check.py
+  python3 scripts/upstream_previous_ids_check.py
+)
+)
+
 step "ci.yml / clippy: Identifier moves (tests)"
 (
   gh_step ci.yml.clippy

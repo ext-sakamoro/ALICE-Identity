@@ -18,6 +18,7 @@
 - 証明書の subject (`did:method:id` の文字列) を `MAX_SUBJECT_LEN` (255 byte) までにする `DeviceCert::issue` と `DeviceCert::from_bytes` は超える subject を `DeviceCertError::SubjectTooLong` で拒む 証明書の長さは最大 `MAX_DEVICE_CERT_LEN` (450 byte)
 
 ### Added
+- CI: 他の crate の `PREVIOUS_*_SEMANTICS_IDS` は一覧全体としてだけ使える (`contains` / `len` / `is_empty`、全体を回す iterator や for、引数として丸ごと渡す) とし、添字・slice のパターン・`.first` / `next` / `take` などを拒む `scripts/upstream_previous_ids_check.py` と試験を足した (ALICE-Edge と同じ中身の共有 file) 上流は major で一覧を空にする 走査した .rs が 0 件なら失敗 (ci.yml と preflight)
 
 - `master_recovery` module (feature `recovery`、OS の乱数源を使うので既定では off、既定の build は wasm32-unknown-unknown のまま): 端末を失った時に同じ DID のまま master 鍵を戻す 復旧 code (`alice_crypto::recovery_code`) で seed を封じる `MasterRecoveryBlob` (AD は文脈 + master 公開鍵) と、k-of-n の share に分ける `split_master` / 戻す `recover_master` 戻した seed の公開鍵が DID の鍵でなければ使わない (DID が改ざんの検査になり、前もって鍵を持たずに変えた share や他人の blob を拒否する) k 枚より多い時は DID の鍵を返す組のうち多項式が最も多くの share を通る組を使い、外れた share の x を返す (k 枚以上が本物なら正確) 組の数が `MAX_RECOVERY_SETS` (4096) を超える探索は `TooManyShares` で拒否 (全部が 1 つの多項式に乗る時は探索しない) 試験 `tests/master_recovery.rs` (10 本) と CI の段 (feature recovery の試験を件数つきで、clippy も) 変異 9 件 (失効の落としを受ける・extend が前の id を持たない・sequence を進めない・発行者を見ない・seed の鍵を比べない・全部が乗る近道を外す・最多の組でなく最初の組・外れを名指さない・探索の上限なし) はすべて red
 - `RevocationList::extend(master, issued_at, more)`: 前の一覧の端末を全部持ち、`more` を足して次の sequence で署名した一覧 発行者でない鍵は `IssuerMismatch`、sequence が `u64::MAX` の一覧は `Malformed`
