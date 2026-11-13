@@ -19,6 +19,7 @@
 
 ### Added
 
+- `master_recovery` module (feature `recovery`、OS の乱数源を使うので既定では off、既定の build は wasm32-unknown-unknown のまま): 端末を失った時に同じ DID のまま master 鍵を戻す 復旧 code (`alice_crypto::recovery_code`) で seed を封じる `MasterRecoveryBlob` (AD は文脈 + master 公開鍵) と、k-of-n の share に分ける `split_master` / 戻す `recover_master` 戻した seed の公開鍵が DID の鍵でなければ使わない (DID が改ざんの検査になり、前もって鍵を持たずに変えた share や他人の blob を拒否する) k 枚より多い時は DID の鍵を返す組のうち多項式が最も多くの share を通る組を使い、外れた share の x を返す (k 枚以上が本物なら正確) 組の数が `MAX_RECOVERY_SETS` (4096) を超える探索は `TooManyShares` で拒否 (全部が 1 つの多項式に乗る時は探索しない) 試験 `tests/master_recovery.rs` (10 本) と CI の段 (feature recovery の試験を件数つきで、clippy も) 変異 9 件 (失効の落としを受ける・extend が前の id を持たない・sequence を進めない・発行者を見ない・seed の鍵を比べない・全部が乗る近道を外す・最多の組でなく最初の組・外れを名指さない・探索の上限なし) はすべて red
 - `RevocationList::extend(master, issued_at, more)`: 前の一覧の端末を全部持ち、`more` を足して次の sequence で署名した一覧 発行者でない鍵は `IssuerMismatch`、sequence が `u64::MAX` の一覧は `Malformed`
 
 - `contact_card::ContactCard`: 人に渡す連絡先カード (QR / 貼り付け) 中身は did:key・master key・端末証明書 (1〜`MAX_CARD_CERTS` = 16 枚)・失効の一覧だけで、人が書き込む欄 (名前・画像・住所) は無い master が署名し (`CONTACT_CARD_CONTEXT`)、`from_bytes` は subject が master の did:key であること・署名・各証明書の発行者と subject・失効の一覧の発行者・失効した端末を載せていないことを確かめる `verify(now)` は各証明書を `now` で確かめる 文字列形 `ALICE-CARD:1:` + base32 (RFC 4648、大文字、padding なし、QR の英数字 mode に入る)、照合用の短い code `short_code()` (SHA-256 の先頭 40 bit を Crockford base32 で `XXXX-XXXX`)

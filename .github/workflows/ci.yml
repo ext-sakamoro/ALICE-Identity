@@ -45,6 +45,10 @@ jobs:
           if [ "${passed}" -eq 0 ]; then echo "::error::no test passed"; exit 1; fi
       - name: Law tests (semantics goldens and identifier, hash order)
         run: scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order
+      # the master key recovery (feature recovery, off by default) and its revocation guarantee: the plain test step
+      # does not build the feature, so its oracles run here and must pass exactly the expected count
+      - name: Recovery tests (feature recovery)
+        run: scripts/run_tests.sh master_recovery=10,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
@@ -145,6 +149,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Clippy (all targets, warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (all targets, feature recovery)
+        run: cargo clippy --all-targets --features recovery -- -D warnings
       # ALICE-Law G7 / G8 / G9 scope: no Law-bearing value crosses a byte boundary (every
       # public function carrying bytes is in scripts/law_boundary_table.toml with its class);
       # read from the rustdoc JSON of the library
