@@ -48,7 +48,7 @@ jobs:
       # the master key recovery (feature recovery, off by default) and its revocation guarantee: the plain test step
       # does not build the feature, so its oracles run here and must pass exactly the expected count
       - name: Recovery tests (feature recovery)
-        run: scripts/run_tests.sh master_recovery=10,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation
+        run: scripts/run_tests.sh master_recovery=11,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and

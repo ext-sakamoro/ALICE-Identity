@@ -352,3 +352,25 @@ fn degenerate_inputs_give_their_stated_errors() {
         Err(RevocationListError::Malformed(_))
     ));
 }
+
+#[test]
+fn shares_of_a_secret_that_is_not_32_bytes_are_refused_without_a_panic() {
+    // shares that recover to a secret of another length (here 16 bytes, made by alice-crypto's own split, so
+    // their byte-form checks hold) are not this identity's: refused, never a panic while the seed is copied
+    // (exactly k: NotThisIdentity; more than k: no k-set gives the DID's seed, NoConsistentSet)
+    let (_, did) = original();
+    let shares = alice_crypto::split(&[0x42; 16], 5, 3).expect("splits");
+    let mut compared = 0;
+    for (n, want) in [
+        (3usize, MasterRecoveryError::NotThisIdentity),
+        (5, MasterRecoveryError::NoConsistentSet),
+    ] {
+        let got = std::panic::catch_unwind(|| recover_master(&shares[..n], &did).map(|_| ()));
+        let got = got.unwrap_or_else(|_| {
+            panic!("recover_master panicked on {n} shares of a 16-byte secret")
+        });
+        assert_eq!(got, Err(want), "{n} shares");
+        compared += 1;
+    }
+    assert_eq!(compared, 2);
+}

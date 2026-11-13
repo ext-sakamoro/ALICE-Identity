@@ -855,7 +855,7 @@ step "ci.yml / test: Law tests (semantics goldens and identifier, hash order)"
 step "ci.yml / test: Recovery tests (feature recovery)"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh master_recovery=10,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh master_recovery=11,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation )
 )
 
 step "ci.yml / release: Test (release)"
