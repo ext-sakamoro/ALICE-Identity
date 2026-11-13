@@ -19,9 +19,11 @@ alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sig
 # its main like alice-sign; only its `sha256` module, without its default features (no `rng`): it links no OS random source, so the crate
 # still builds for wasm32-unknown-unknown
 alice-crypto = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Crypto", branch = "main", default-features = false, features = ["sha256"] }
+# wipes the master seed copy in master_recovery (feature recovery); already in the build through alice-crypto
+zeroize = { version = "1", default-features = false, optional = true }
 
 [features]
 # device-loss recovery of the master key (master_recovery): sealing under a recovery code and splitting into
 # shares need the operating system's random source, so it is off by default (the crate builds for
 # wasm32-unknown-unknown without it)
-recovery = ["alice-crypto/aead", "alice-crypto/hash", "alice-crypto/rng"]
+recovery = ["alice-crypto/aead", "alice-crypto/hash", "alice-crypto/rng", "dep:zeroize"]

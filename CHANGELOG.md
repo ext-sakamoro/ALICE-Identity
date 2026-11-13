@@ -46,6 +46,7 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
+- feature `recovery`: `master_recovery` の内部で seed を 32 byte に写した複製を使い終わりに消す (`zeroize`、alice-crypto 経由で既に build に入っている crate) 呼び出し側の seed は既に消える buffer
 - 手元の `scripts/preflight.sh` を生成し直す: SHA で固定した `dtolnay/rust-toolchain` の commit を toolchain と読んで `has_toolchain` で毎回止まっていた (toolchain は `rust-toolchain.toml` に従う)
 - 検証の変更: `DeviceCert::verify` は `issued_at <= now + MAX_CLOCK_SKEW_SECS` (600 秒) を受け入れる 時計が進んだ端末で今の時刻で発行された証明書を、時計が遅れた検証側がすぐに受け入れる 猶予は始まりだけで `not_after` には無い (`now < not_after` のまま)、失効の検査は変わらない `IDENTITY_SEMANTICS_ID` は作る bytes の識別子なので動かない 試験 `tests/clock_skew.rs` (600 秒先は受け入れ、601 秒先は `NotYetValid`、`not_after` が now と now - 1 は `Expired`) 変異 2 件 (猶予を `not_after` にも足す、始まりの境界を 1 秒ずらす) は red
 - CI: `actions/cache` を v6 に (v5 は廃止予定の node20 で動き、actionlint が error にする)

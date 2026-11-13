@@ -25,6 +25,7 @@ use alice_crypto::recovery_code::{
 };
 use alice_crypto::{Shard, SssError};
 use alice_sign::{KeyPair, PublicKey};
+use zeroize::Zeroizing;
 
 /// The prefix of the associated data a seed is sealed under (followed by the master public key).
 pub const MASTER_RECOVERY_CONTEXT: &[u8] = b"alice-identity master-recovery v1";
@@ -49,10 +50,13 @@ fn did_key(did: &Did) -> Result<PublicKey, MasterRecoveryError> {
 
 /// The key of `seed` when it is the DID's
 fn key_of(seed: &[u8], expected: &PublicKey) -> Result<KeyPair, MasterRecoveryError> {
-    let seed: [u8; 32] = seed
-        .try_into()
-        .map_err(|_| MasterRecoveryError::NotThisIdentity)?;
-    let key = KeyPair::from_seed(seed);
+    // the 32-byte copy is wiped when it goes out of scope (the caller's seed is already a Zeroizing
+    // buffer); KeyPair::from_seed takes its seed by value, so that call's own copy is alice-sign's to wipe
+    let seed: Zeroizing<[u8; 32]> = Zeroizing::new(
+        seed.try_into()
+            .map_err(|_| MasterRecoveryError::NotThisIdentity)?,
+    );
+    let key = KeyPair::from_seed(*seed);
     if key.public() == *expected {
         Ok(key)
     } else {
