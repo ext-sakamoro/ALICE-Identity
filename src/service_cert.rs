@@ -14,6 +14,13 @@
 //! (`did:alice:...`, `did:key:...`) is never accepted as the key of a service, and the certificate of
 //! one service is never accepted for another.
 //!
+//! The other direction holds too, even when the operator's master also signs the devices of a
+//! person: [`DeviceCert::issue`] refuses the reserved method and [`DeviceCert::verify`] refuses a
+//! certificate that has it ([`DeviceCertError::ReservedSubject`]), and every path that accepts a
+//! device of a person goes through [`DeviceCert::verify`]. [`issue_service_cert`] is the only issuer
+//! of a service certificate and [`verify_service_cert`] the only acceptor. The method is compared
+//! exactly (see [`crate::device_cert`]).
+//!
 //! # Service names
 //!
 //! `<service>` is 1 to [`MAX_SERVICE_NAME_LEN`] bytes of lowercase ASCII letters (`a`-`z`), digits
@@ -154,7 +161,7 @@ pub fn issue_service_cert(
     if lifetime > SERVICE_CERT_MAX_LIFETIME_SECS {
         return Err(ServiceCertError::LifetimeTooLong(lifetime));
     }
-    Ok(DeviceCert::issue(
+    Ok(DeviceCert::issue_any_subject(
         master,
         &subject,
         signing_public,
@@ -170,8 +177,9 @@ pub fn issue_service_cert(
 /// The checks run in this order and the first failing one is returned:
 ///
 /// 1. `service` follows the service name rule ([`ServiceCertError::BadServiceName`]);
-/// 2. the certificate verifies under `master` at `now` ([`DeviceCert::verify`]: version, issuer,
-///    signature, validity window; [`ServiceCertError::Cert`]);
+/// 2. the certificate verifies under `master` at `now` (the checks of [`DeviceCert::verify`] apart
+///    from the refusal of the reserved method: version, issuer, signature, validity window;
+///    [`ServiceCertError::Cert`]);
 /// 3. its subject is a service DID ([`ServiceCertError::NotAService`]) and is exactly
 ///    the subject [`service_subject`] gives for `service` ([`ServiceCertError::WrongService`]);
 /// 4. `not_after - issued_at` is at most [`SERVICE_CERT_MAX_LIFETIME_SECS`]
@@ -191,7 +199,7 @@ pub fn verify_service_cert(
     revocation: Revocation<'_>,
 ) -> Result<[u8; 32], ServiceCertError> {
     let expected = service_subject(service)?;
-    cert.verify(master, now)?;
+    cert.verify_any_subject(master, now)?;
     if cert.subject().method != SERVICE_DID_METHOD {
         return Err(ServiceCertError::NotAService);
     }

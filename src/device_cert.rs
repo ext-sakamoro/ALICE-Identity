@@ -32,8 +32,26 @@
 //! revoking an id ([`crate::cert_revocation`]) retires that key for that subject in every period.
 //! Version 2 had the same layout with an issuer-chosen id and is refused as
 //! [`DeviceCertError::UnsupportedVersion`].
+//!
+//! # A person's devices and services
+//!
+//! The subject method [`SERVICE_DID_METHOD`] (`did:alice-service:<service>`) is reserved for the
+//! certificates of services ([`crate::service_cert`]). Everything else in this module is about the
+//! devices of a person: [`DeviceCert::issue`] refuses a subject of the reserved method and
+//! [`DeviceCert::verify`] refuses a certificate whose subject has it, both as
+//! [`DeviceCertError::ReservedSubject`]. Only [`crate::service_cert::issue_service_cert`] issues such a
+//! certificate and only [`crate::service_cert::verify_service_cert`] accepts one, so a service
+//! certificate signed by a master that also signs a person's devices is never accepted as one of that
+//! person's devices (artifact signatures, signed artifacts and contact cards all accept a device
+//! through [`DeviceCert::verify`]), and a device certificate of a person is never accepted as a
+//! service's.
+//!
+//! The method is compared exactly (byte for byte, case included): `alice-services`, `alice-service-x`
+//! or `ALICE-SERVICE` are ordinary methods, issued and accepted as a person's and never as a service.
+//! The two sets are disjoint and cover every subject, so no certificate is accepted by both sides.
 
 use crate::did::Did;
+use crate::service_cert::SERVICE_DID_METHOD;
 use alice_sign::{hash_data, KeyPair, PublicKey, Signature};
 use std::fmt;
 
@@ -165,6 +183,10 @@ pub enum DeviceCertError {
     Expired { now: u64, not_after: u64 },
     /// The stored device id is not the one derived from the subject and the device key
     DeviceIdMismatch,
+    /// The subject's method is the one reserved for services ([`SERVICE_DID_METHOD`]): such a
+    /// certificate is issued and accepted only through [`crate::service_cert`], never as a device of a
+    /// person (see the module documentation)
+    ReservedSubject,
 }
 
 impl fmt::Display for DeviceCertError {
@@ -200,6 +222,10 @@ impl fmt::Display for DeviceCertError {
                 f,
                 "device certificate id is not derived from its subject and device key"
             ),
+            Self::ReservedSubject => write!(
+                f,
+                "device certificate subject has the method `{SERVICE_DID_METHOD}`, reserved for services"
+            ),
         }
     }
 }
@@ -222,14 +248,49 @@ fn canonical_subject(subject: &Did) -> Result<String, DeviceCertError> {
     }
 }
 
+/// Whether `subject` has the method reserved for services, compared exactly (see the module
+/// documentation)
+pub(crate) fn is_service_subject(subject: &Did) -> bool {
+    subject.method == SERVICE_DID_METHOD
+}
+
 impl DeviceCert {
-    /// Sign a certificate for `device_public` and `noise_static` under `subject` with the master key
+    /// Sign a certificate for a device of a person: `device_public` and `noise_static` under
+    /// `subject`, with the master key
+    ///
+    /// A subject of the method reserved for services is refused; a service certificate is issued by
+    /// [`crate::service_cert::issue_service_cert`] (see the module documentation).
     ///
     /// # Errors
-    /// [`DeviceCertError::InvalidValidity`] when `not_after <= issued_at`,
+    /// In this order: [`DeviceCertError::ReservedSubject`] when the subject's method is
+    /// [`SERVICE_DID_METHOD`], [`DeviceCertError::InvalidValidity`] when `not_after <= issued_at`,
     /// [`DeviceCertError::SubjectTooLong`] when the subject text is over [`MAX_SUBJECT_LEN`] bytes,
     /// [`DeviceCertError::InvalidSubject`] when the subject does not round-trip as text
     pub fn issue(
+        master: &KeyPair,
+        subject: &Did,
+        device_public: [u8; 32],
+        noise_static: [u8; 32],
+        issued_at: u64,
+        not_after: u64,
+    ) -> Result<Self, DeviceCertError> {
+        if is_service_subject(subject) {
+            return Err(DeviceCertError::ReservedSubject);
+        }
+        Self::issue_any_subject(
+            master,
+            subject,
+            device_public,
+            noise_static,
+            issued_at,
+            not_after,
+        )
+    }
+
+    /// [`DeviceCert::issue`] without the reserved-method check: the one way a service certificate is
+    /// made, for [`crate::service_cert::issue_service_cert`] only (not public, so no caller outside
+    /// this crate can give a certificate the reserved method)
+    pub(crate) fn issue_any_subject(
         master: &KeyPair,
         subject: &Did,
         device_public: [u8; 32],
@@ -343,12 +404,42 @@ impl DeviceCert {
         })
     }
 
-    /// Accept the certificate only if it was issued by `master`, its signature verifies strictly
-    /// over the context and body, `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`
+    /// Accept the certificate as a device of a person: only if it was issued by `master`, its
+    /// signature verifies strictly over the context and body, its subject's method is not the one
+    /// reserved for services, `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`
+    ///
+    /// Every path of this crate that accepts a device of a person (artifact signatures, signed
+    /// artifacts, contact cards) goes through this function, so none of them accepts a service
+    /// certificate; a service certificate is accepted by [`crate::service_cert::verify_service_cert`]
+    /// only (see the module documentation).
     ///
     /// # Errors
-    /// The first failing check, in this order: version, issuer, signature, validity window
+    /// The first failing check, in this order: version, issuer, signature,
+    /// [`DeviceCertError::ReservedSubject`], validity window (the subject is read only once the
+    /// signature has verified)
     pub fn verify(&self, master: &PublicKey, now: u64) -> Result<(), DeviceCertError> {
+        self.verify_signature(master)?;
+        if is_service_subject(&self.subject) {
+            return Err(DeviceCertError::ReservedSubject);
+        }
+        self.verify_window(now)
+    }
+
+    /// [`DeviceCert::verify`] without the reserved-method check: version, issuer, signature and
+    /// validity window, for [`crate::service_cert::verify_service_cert`] only, which then requires
+    /// the reserved method (not public, so no caller outside this crate accepts a certificate
+    /// without one of the two subject checks)
+    pub(crate) fn verify_any_subject(
+        &self,
+        master: &PublicKey,
+        now: u64,
+    ) -> Result<(), DeviceCertError> {
+        self.verify_signature(master)?;
+        self.verify_window(now)
+    }
+
+    /// Version, issuer and signature
+    fn verify_signature(&self, master: &PublicKey) -> Result<(), DeviceCertError> {
         if self.version != DEVICE_CERT_VERSION {
             return Err(DeviceCertError::UnsupportedVersion(self.version));
         }
@@ -358,6 +449,11 @@ impl DeviceCert {
         if !master.verify_strict(&self.signed_message(), &Signature(self.signature)) {
             return Err(DeviceCertError::BadSignature);
         }
+        Ok(())
+    }
+
+    /// `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`
+    const fn verify_window(&self, now: u64) -> Result<(), DeviceCertError> {
         // the start has the clock-skew leeway, the end has none
         if now.saturating_add(MAX_CLOCK_SKEW_SECS) < self.issued_at {
             return Err(DeviceCertError::NotYetValid {

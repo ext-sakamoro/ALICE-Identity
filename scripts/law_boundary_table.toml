@@ -64,6 +64,12 @@ reason = "checks an artifact signature against a master key, a payload digest an
 
 [[function]]
 file = "src/artifact.rs"
+name = "verify_service_artifact"
+class = "artifact signature"
+reason = "checks an artifact signature made by a named service against the operator's master key, a payload digest, a time and revocation, holding the certificate to the service certificate rules"
+
+[[function]]
+file = "src/artifact.rs"
 name = "bound_digest"
 class = "signed artifact"
 reason = "the digest a signed artifact signs, SHA-256(law_ref || SHA-256(payload)), over law reference and payload bytes taken as they are"
