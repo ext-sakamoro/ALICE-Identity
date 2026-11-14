@@ -1,9 +1,13 @@
 //! Artifact signatures: a device key signs the digest of any artifact for one stated purpose
 //!
 //! The device key is the one a [`DeviceCert`] names; the verifier checks the certificate against
-//! the subject's master key and its revocation list, then the signature. The caller states the
-//! purpose as a context (such as `alice-mls/artifact/v1`) and the verifier must name the context it
-//! expects, so a signature made for one purpose never verifies for another.
+//! the subject's master key and its revocation list, then the signature. The certificate is a
+//! device of a person, accepted through [`DeviceCert::verify`]: a service certificate
+//! ([`crate::service_cert`]) is refused as [`DeviceCertError::ReservedSubject`] even when the same
+//! master signed it.
+//!
+//! The caller states the purpose as a context (such as `alice-mls/artifact/v1`) and the verifier
+//! must name the context it expects, so a signature made for one purpose never verifies for another.
 //!
 //! Only a digest is signed. Bind everything the signature must protect into that one digest: a
 //! carrier that signs a payload under a law reference passes `SHA-256(law_ref || payload_digest)`,
@@ -26,6 +30,7 @@ use alice_sign::{hash_data, KeyPair, PublicKey, Signature};
 
 use crate::cert_revocation::CertRevocations;
 use crate::device_cert::{DeviceCert, DeviceCertError};
+use crate::service_cert::{verify_service_cert, ServiceCertError};
 
 /// The domain every artifact signature's message starts with
 pub const ARTIFACT_DOMAIN: &[u8] = b"alice-identity artifact v1";
@@ -125,6 +130,11 @@ pub enum ArtifactError {
     Revoked,
     /// The signature does not verify (strictly) under the certificate's device key
     BadSignature,
+    /// [`verify_service_artifact`]: the certificate is not one of the named service (a bad service
+    /// name, a subject that is not a service DID, another service, or a lifetime over the bound);
+    /// a certificate that does not verify is [`ArtifactError::Cert`] and a revoked one
+    /// [`ArtifactError::Revoked`], as for a person's device
+    Service(ServiceCertError),
 }
 
 impl std::fmt::Display for ArtifactError {
@@ -140,11 +150,20 @@ impl std::fmt::Display for ArtifactError {
             Self::Cert(e) => write!(f, "device certificate: {e}"),
             Self::Revoked => f.write_str("the device certificate is revoked"),
             Self::BadSignature => f.write_str("the artifact signature does not verify"),
+            Self::Service(e) => write!(f, "{e}"),
         }
     }
 }
 
-impl std::error::Error for ArtifactError {}
+impl std::error::Error for ArtifactError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Cert(e) => Some(e),
+            Self::Service(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 fn check_context(context: &[u8]) -> Result<(), ArtifactError> {
     let printable = context.iter().all(|b| (0x20..=0x7e).contains(b));
@@ -319,7 +338,8 @@ pub fn sign_artifact(
 /// # Errors
 /// In this order: [`ArtifactError::InvalidContext`] (the expected context),
 /// [`ArtifactError::ContextMismatch`], [`ArtifactError::DigestMismatch`],
-/// [`ArtifactError::Cert`] (issuer, signature, validity at `now`), [`ArtifactError::Revoked`],
+/// [`ArtifactError::Cert`] (issuer, signature, a service certificate as
+/// [`DeviceCertError::ReservedSubject`], validity at `now`), [`ArtifactError::Revoked`],
 /// [`ArtifactError::BadSignature`]
 pub fn verify_artifact(
     sig: &ArtifactSignature,
@@ -342,6 +362,54 @@ pub fn verify_artifact(
             return Err(ArtifactError::Revoked);
         }
     }
+    verify_signature(sig)
+}
+
+/// Accept `sig` as an artifact signature of the service named `service`
+///
+/// It must be made for `expected_context` over `expected_digest`, under a service certificate that
+/// `master` (the operator's key) issued, valid at `now` and not revoked by `revocation`.
+///
+/// The counterpart of [`verify_artifact`] for a service: the certificate is held to every rule of
+/// [`verify_service_cert`] (the service name, the reserved method, exactly the named service, the
+/// lifetime bound and revocation) instead of being accepted as a device of a person, and then the
+/// signature is checked as [`verify_artifact`] checks it. A device certificate of a person is refused
+/// here as [`ServiceCertError::NotAService`], as a service certificate is refused by
+/// [`verify_artifact`] as [`DeviceCertError::ReservedSubject`], so a verifier says which of the two
+/// it expects and no certificate is accepted as the other.
+///
+/// # Errors
+/// In this order: [`ArtifactError::InvalidContext`] (the expected context),
+/// [`ArtifactError::ContextMismatch`], [`ArtifactError::DigestMismatch`], then the order of
+/// [`verify_service_cert`] (a bad name, a subject that is not the service and a lifetime over the
+/// bound as [`ArtifactError::Service`]; issuer, signature and validity at `now` as
+/// [`ArtifactError::Cert`]; [`ArtifactError::Revoked`]), then [`ArtifactError::BadSignature`]
+pub fn verify_service_artifact(
+    sig: &ArtifactSignature,
+    master: &PublicKey,
+    service: &str,
+    expected_context: &[u8],
+    expected_digest: &PayloadDigest,
+    now: u64,
+    revocation: Revocation<'_>,
+) -> Result<(), ArtifactError> {
+    check_context(expected_context)?;
+    if sig.context != expected_context {
+        return Err(ArtifactError::ContextMismatch);
+    }
+    if sig.digest != *expected_digest {
+        return Err(ArtifactError::DigestMismatch);
+    }
+    verify_service_cert(&sig.cert, master, service, now, revocation).map_err(|e| match e {
+        ServiceCertError::Cert(e) => ArtifactError::Cert(e),
+        ServiceCertError::Revoked => ArtifactError::Revoked,
+        e => ArtifactError::Service(e),
+    })?;
+    verify_signature(sig)
+}
+
+/// The signature under the certificate's device key, strictly
+fn verify_signature(sig: &ArtifactSignature) -> Result<(), ArtifactError> {
     let device = PublicKey(*sig.cert.device_public());
     if !device.verify_strict(&sig.signed_message(), &Signature(sig.signature)) {
         return Err(ArtifactError::BadSignature);

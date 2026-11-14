@@ -7,7 +7,7 @@
 
 use alice_identity::artifact::Revocation;
 use alice_identity::cert_revocation::{CertRevocations, RevocationList};
-use alice_identity::device_cert::{DeviceCert, DeviceCertError, DeviceId};
+use alice_identity::device_cert::{DeviceCert, DeviceCertError, DeviceId, DEVICE_CERT_CONTEXT};
 use alice_identity::did::Did;
 use alice_identity::service_cert::{
     issue_service_cert, service_subject, verify_service_cert, ServiceCertError,
@@ -50,6 +50,28 @@ const GOLDEN_HEX: &str = "0300176469643a616c6963652d736572766963653a72656c6179d0
 const GOLDEN_SHA256: &str = "7413768a2378268f2f420a8a0febe622921c3d12352c52ab8531a25a58e7ef10";
 /// The device id of the signing key under `did:alice-service:relay` (hashlib)
 const GOLDEN_DEVICE_ID: &str = "2cc6cdf9011839b93c29b491383786f1";
+
+/// A certificate for `subject` laid out by hand (the documented version 3 layout) and signed by `m`
+///
+/// `DeviceCert::issue` refuses the reserved method and `issue_service_cert` refuses a lifetime over
+/// the bound, so a correctly signed service certificate that breaks the bound is made here, as an
+/// operator signing by hand could make it.
+fn hand_signed(m: &KeyPair, subject: &Did, issued_at: u64, not_after: u64) -> DeviceCert {
+    let text = subject.to_string();
+    let mut body = vec![3u8];
+    body.extend_from_slice(&u16::try_from(text.len()).unwrap().to_be_bytes());
+    body.extend_from_slice(text.as_bytes());
+    body.extend_from_slice(&signing());
+    body.extend_from_slice(&NOISE);
+    body.extend_from_slice(&issued_at.to_be_bytes());
+    body.extend_from_slice(&not_after.to_be_bytes());
+    body.extend_from_slice(DeviceId::derive(subject, &signing()).unwrap().as_bytes());
+    body.extend_from_slice(&m.public().0);
+    let mut signed = DEVICE_CERT_CONTEXT.to_vec();
+    signed.extend_from_slice(&body);
+    body.extend_from_slice(&m.sign(&signed).0);
+    DeviceCert::from_bytes(&body).unwrap()
+}
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -186,6 +208,12 @@ fn the_encoding_of_a_fixed_service_certificate_is_the_recorded_bytes() {
     assert_eq!(hex(&hash_data(&bytes).0), GOLDEN_SHA256);
     assert_eq!(hex(c.device_id().as_bytes()), GOLDEN_DEVICE_ID);
     assert_eq!(bytes.len(), 218);
+    // the hand layout of the tests below is the recorded one
+    let subject = service_subject(SERVICE).unwrap();
+    assert_eq!(
+        hex(&hand_signed(&master(), &subject, ISSUED_AT, NOT_AFTER).to_bytes()),
+        GOLDEN_HEX
+    );
     // the checker is not vacuous: one other byte gives another digest
     let mut other = bytes;
     other[0] ^= 1;
@@ -310,8 +338,8 @@ fn a_lifetime_over_thirty_days_is_refused_at_issue() {
 fn a_lifetime_over_thirty_days_is_refused_at_verify() {
     let over = ISSUED_AT + SERVICE_CERT_MAX_LIFETIME_SECS + 1;
     let subject = service_subject(SERVICE).unwrap();
-    // signed correctly by the master, through the device-certificate API that has no bound
-    let c = DeviceCert::issue(&master(), &subject, signing(), NOISE, ISSUED_AT, over).unwrap();
+    // signed correctly by the master, by hand (no issuing function makes it)
+    let c = hand_signed(&master(), &subject, ISSUED_AT, over);
     assert_eq!(
         verify_at(&c, ISSUED_AT),
         Err(ServiceCertError::LifetimeTooLong(
@@ -435,30 +463,24 @@ fn the_checks_run_in_the_documented_order() {
     ));
     // another service with a lifetime over the bound: the subject check comes before the lifetime
     let subject = service_subject("push").unwrap();
-    let long = DeviceCert::issue(
+    let long = hand_signed(
         &m,
         &subject,
-        signing(),
-        NOISE,
         ISSUED_AT,
         ISSUED_AT + SERVICE_CERT_MAX_LIFETIME_SECS + 1,
-    )
-    .unwrap();
+    );
     assert_eq!(
         verify_at(&long, ISSUED_AT),
         Err(ServiceCertError::WrongService)
     );
     // a revoked certificate with a lifetime over the bound: the lifetime comes before revocation
     let own = service_subject(SERVICE).unwrap();
-    let long_own = DeviceCert::issue(
+    let long_own = hand_signed(
         &m,
         &own,
-        signing(),
-        NOISE,
         ISSUED_AT,
         ISSUED_AT + SERVICE_CERT_MAX_LIFETIME_SECS + 1,
-    )
-    .unwrap();
+    );
     let mut revs = CertRevocations::new();
     revs.accept(
         RevocationList::issue(&m, 1, ISSUED_AT, &[long_own.device_id()]),

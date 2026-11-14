@@ -23,6 +23,12 @@
 //! is revoked by it. [`ContactCard::verify`] then checks each certificate's validity at `now` (the
 //! caller passes `now`; this crate reads no clock).
 //!
+//! The certificates are devices of a person: a service certificate ([`crate::service_cert`]), even
+//! one signed by the same master, has the subject `did:alice-service:...`, not the card's did:key, so
+//! the card refuses it as [`ContactCardError::CertIssuerMismatch`] at issue and decode, and
+//! [`ContactCard::verify`] accepts each certificate through [`DeviceCert::verify`], which refuses it
+//! again as [`DeviceCertError::ReservedSubject`].
+//!
 //! The short code ([`ContactCard::short_code`]) is the first 40 bits of
 //! `SHA-256(CONTACT_CARD_SHORT_CODE_CONTEXT || bytes)` in Crockford base32, written `XXXX-XXXX`: two
 //! people read it to each other to confirm they hold the same card. It is not a secret and does not

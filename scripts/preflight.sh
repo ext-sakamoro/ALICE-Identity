@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev a435b0d5d7655af2500185f73eb99726c67cee8e
+# generator rev 22eeb4ae73784d711cc6d977ce4e930ee9914972
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -874,7 +874,7 @@ step "ci.yml / test: Recovery tests (feature recovery)"
 step "ci.yml / test: Service certificate tests"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19 -- cargo test --test service_cert )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10 -- cargo test --test service_cert --test service_subject_separation --test service_artifact )
 )
 
 step "ci.yml / release: Test (release)"
@@ -892,7 +892,7 @@ step "ci.yml / release: Law tests (release)"
 step "ci.yml / release: Service certificate tests (release)"
 (
   gh_step ci.yml.release
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19 -- cargo test --release --test service_cert )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"
