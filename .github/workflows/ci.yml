@@ -49,6 +49,9 @@ jobs:
       # does not build the feature, so its oracles run here and must pass exactly the expected count
       - name: Recovery tests (feature recovery)
         run: scripts/run_tests.sh master_recovery=11,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation
+      # the service certificate oracles (reserved subject, 30-day bound, golden bytes): every one must run
+      - name: Service certificate tests
+        run: scripts/run_tests.sh service_cert=19 -- cargo test --test service_cert
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
@@ -70,6 +73,8 @@ jobs:
         run: cargo test --release
       - name: Law tests (release)
         run: scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
+      - name: Service certificate tests (release)
+        run: scripts/run_tests.sh service_cert=19 -- cargo test --release --test service_cert
 
   float-environment:
     # ALICE-Law G14 on each OS: round-to-nearest-even and no flush-to-zero at run time in

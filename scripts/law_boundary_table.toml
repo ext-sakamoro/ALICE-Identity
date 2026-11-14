@@ -337,3 +337,15 @@ file = "src/safety_number.rs"
 name = "as_bytes"
 class = "digest"
 reason = "the two parties' final SHA-256 hashes of the safety number, in ascending order"
+
+[[function]]
+file = "src/service_cert.rs"
+name = "issue_service_cert"
+class = "device certificate"
+reason = "a device certificate whose subject is the reserved service DID: the service's signing key and Noise static key (32 bytes each), signed by the operator's master key"
+
+[[function]]
+file = "src/service_cert.rs"
+name = "verify_service_cert"
+class = "device certificate"
+reason = "checks a service certificate against a master key, a service name, a time and revocation, and returns the 32-byte Noise static key it carries"

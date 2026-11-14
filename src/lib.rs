@@ -41,6 +41,7 @@ pub mod resolver;
 pub mod revocation;
 pub mod safety_number;
 pub mod semantics;
+pub mod service_cert;
 pub mod service_endpoint;
 pub mod signed_did;
 pub mod trust_graph;

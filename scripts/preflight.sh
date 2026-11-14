@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev b52be62b5b6e407c90b9a7a01c1fb96e64844cf8
+# generator rev a435b0d5d7655af2500185f73eb99726c67cee8e
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -367,7 +367,7 @@ heavy_slot_record_kill() {
   [ -n "${HEAVY_SLOT_TAKE_ROOT:-}" ] || return 0
   if printf '%s\n' "$1" | awk -v r="$HEAVY_SLOT_TAKE_ROOT" '$1 == r { found = 1 } END { exit !found }'; then
     heavy_slot_record_take 137 "$2"
-    rm -f "${HEAVY_SLOT_PEAK_FILE:-}" "${HEAVY_SLOT_PEAK_FILE:-}.note" "${HEAVY_SLOT_PEAK_FILE:-}.done" 2>/dev/null || true
+    rm -f "${HEAVY_SLOT_PEAK_FILE:-}" "${HEAVY_SLOT_PEAK_FILE:-}.note" 2>/dev/null || true
   elif [ -n "${HEAVY_SLOT_PEAK_FILE:-}" ]; then
     # the recording take outlives this kill and records at its exit: leave it the reason
     printf '%s\n' "$2" > "$HEAVY_SLOT_PEAK_FILE.note" 2>/dev/null || true
@@ -377,6 +377,9 @@ heavy_slot_record_kill() {
 heavy_slot_note_peak() {
   local f=${HEAVY_SLOT_PEAK_FILE:-} old
   [ -n "$f" ] || return 0
+  # a watcher still sampling after the take recorded would make the peak file again, and the lost-take recorder would
+  # then write a second row for the same take (2026-11-14: takes.tsv had each take twice, the second "lost")
+  [ -e "$f.done" ] && return 0
   old=$(cat "$f" 2>/dev/null) || old=0
   case "$old" in '' | *[!0-9]*) old=0 ;; esac
   if [ "$1" -gt "$old" ]; then printf '%s\n' "$1" > "$f" 2>/dev/null || true; fi
@@ -581,8 +584,8 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - ci.yml:float-environment:ALICE-Law G11 self-check (the four G11 checks at the pinned revision) (no cargo / grep)
 #   - security-audit.yml:changes:run (needs network / runner-only)
-#   - security-audit.yml:audit:Install cargo-audit (needs network / runner-only)
-#   - security-audit.yml:deny:Install cargo-deny (needs network / runner-only)
+#   - security-audit.yml:audit:Install cargo-audit (a tool install, setup)
+#   - security-audit.yml:deny:Install cargo-deny (a tool install, setup)
 #   - changed-paths-oracle.yml:changes:decide (reads AFTER, BEFORE, CREATED, EVENT, FORCED, PR_BASE, PR_HEAD, a value only the runner has)
 #   - changed-paths-oracle.yml:oracle: uses actions/setup-python@v6 (an action this file cannot run)
 #   - changed-paths-oracle.yml:oracle:PyYAML (pinned) (no cargo / grep)
@@ -868,6 +871,12 @@ step "ci.yml / test: Recovery tests (feature recovery)"
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh master_recovery=11,cert_revocation=14 -- cargo test --features recovery --test master_recovery --test cert_revocation )
 )
 
+step "ci.yml / test: Service certificate tests"
+(
+  gh_step ci.yml.test
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19 -- cargo test --test service_cert )
+)
+
 step "ci.yml / release: Test (release)"
 (
   gh_step ci.yml.release
@@ -878,6 +887,12 @@ step "ci.yml / release: Law tests (release)"
 (
   gh_step ci.yml.release
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order )
+)
+
+step "ci.yml / release: Service certificate tests (release)"
+(
+  gh_step ci.yml.release
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19 -- cargo test --release --test service_cert )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"
@@ -918,5 +933,38 @@ step "security-audit.yml / audit: Run cargo audit"
   echo "cargo audit scanned ${n} crates"
 )
 )
+
+# CI runs that this run does not: named and counted in the receipt (run-preflight)
+not_run() { echo "PREFLIGHT-NOT-RUN: $*"; }
+# an OS leg runs here only when the host is of its family (ubuntu on Linux, macos on macOS)
+leg_not_run() {
+  case "$2:$(uname -s)" in
+    ubuntu*:Linux|macos*:Darwin) ;;
+    *) not_run "$1 [runs-on=$2] (an OS leg this host does not run)" ;;
+  esac
+}
+not_run 'ci.yml:float-environment:ALICE-Law G11 self-check (the four G11 checks at the pinned revision) (no cargo / grep)'
+not_run 'changed-paths-oracle.yml:oracle: uses actions/setup-python@v6 (an action this file cannot run)'
+not_run 'changed-paths-oracle.yml:oracle:PyYAML (pinned) (no cargo / grep)'
+not_run 'changed-paths-oracle.yml:oracle:Fetch the workflows of the public ALICE repositories (needs network / runner-only)'
+not_run 'eol.yml:eol: uses actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 (an action this file cannot run)'
+not_run 'g3-ir.yml:ir:Targets for the pinned toolchain [target=x86_64-unknown-linux-gnu] (no cargo / grep)'
+not_run 'g3-ir.yml:ir:No negated fma result in alice-identity'"'"'s release IR [target=x86_64-unknown-linux-gnu] (its `if:` runs on what happened earlier on the runner)'
+not_run 'g3-ir.yml:ir:Targets for the pinned toolchain [target=aarch64-unknown-linux-gnu] (no cargo / grep)'
+not_run 'g3-ir.yml:ir:No negated fma result in alice-identity'"'"'s release IR [target=aarch64-unknown-linux-gnu] (its `if:` runs on what happened earlier on the runner)'
+not_run 'public-text.yml:public-text: uses actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 (an action this file cannot run)'
+not_run 'public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (no cargo / grep)'
+leg_not_run ci.yml:test ubuntu-latest
+leg_not_run ci.yml:test macos-latest
+leg_not_run ci.yml:release ubuntu-latest
+leg_not_run ci.yml:release macos-latest
+leg_not_run ci.yml:float-environment ubuntu-latest
+leg_not_run ci.yml:float-environment macos-latest
+leg_not_run ci.yml:float-environment windows-latest
+leg_not_run eol.yml:eol ubuntu-latest
+leg_not_run eol.yml:eol macos-latest
+leg_not_run eol.yml:eol windows-latest
+leg_not_run g3-ir.yml:ir ubuntu-latest
+leg_not_run g3-ir.yml:ir ubuntu-24.04-arm
 
 echo; echo "preflight OK"
