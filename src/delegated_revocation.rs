@@ -49,6 +49,21 @@
 //! a kept list that has gone stale, is a refusal. The clock statements of [`RevocationList::is_fresh`]
 //! apply.
 //!
+//! # Limits
+//!
+//! - **The signing job stopping.** Lists are signed online by the delegate. If the operator's signing
+//!   job stops, every caller that requires a fresh list refuses the relay once the newest list is older
+//!   than the window (24 hours by default). When the delegate certificate also expires (at most 7 days
+//!   after it was issued), no new list can be signed until the master issues the next delegate. The
+//!   refusal is the intended outcome: a relay whose revocation status cannot be shown is not used.
+//! - **A leaked delegate key.** Until its certificate expires (at most
+//!   [`REVOCATION_DELEGATE_MAX_LIFETIME_SECS`]), a leaked epoch-E key can keep signing fresh lists under
+//!   E. A caller that never sees a list under a newer epoch E' accepts them; freshness does not shorten
+//!   this. A caller that talks only to a compromised relay is exposed for at most the delegate's lifetime.
+//! - **A clock behind on a fresh install.** With nothing kept, an old list looks fresh for as far as the
+//!   clock is behind; only the certificate checks under the same clock bound it (see
+//!   [`RevocationList::is_fresh`]).
+//!
 //! # Persistence
 //!
 //! [`DelegatedRevocations::to_bytes`] encodes the kept state:
@@ -64,6 +79,11 @@
 //! digest has no key. [`DelegatedRevocations::restore`] reads the bytes and checks every signature and
 //! certificate rule again under the master, except the times: the stored list may be stale and the stored
 //! delegate may have expired, and freshness is checked per use ([`DelegatedRevocations::require_fresh`]).
+//!
+//! The digest detects corruption, not replacement. Anyone who can write where the bytes are stored can
+//! put back an older, validly signed state and lower the (epoch, sequence) floor. The gain is bounded by
+//! the window: the restored list goes stale within it, after which a fresh list is required. Keeping the
+//! floor where that writer cannot rewind it is the caller's choice.
 
 use crate::artifact::Revocation;
 use crate::cert_revocation::{Accepted, CertRevocations, RevocationList, RevocationListError};

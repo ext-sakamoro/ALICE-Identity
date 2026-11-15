@@ -232,8 +232,9 @@ impl RevocationList {
     ///
     /// The answer is only as good as the caller's clock (this crate reads none):
     ///
-    /// - a clock running ahead makes every list look stale, including the newest one, so a caller that
-    ///   requires a fresh list refuses everything until the clock is right;
+    /// - a clock running ahead by more than the window minus a list's age makes that list look stale;
+    ///   once it is ahead by more than the window minus the age of the newest list, every list looks
+    ///   stale and a caller that requires a fresh list refuses everything until the clock is right;
     /// - a clock running behind makes an old list look fresh for as far as the clock is behind. On a
     ///   fresh install (nothing kept yet) nothing else bounds this: the (epoch, sequence) floor of
     ///   [`crate::delegated_revocation::DelegatedRevocations`] only refuses lists older than one already
