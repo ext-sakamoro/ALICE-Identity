@@ -717,3 +717,26 @@ fn restore_checks_every_signature_from_bytes_does_not() {
         E::LifetimeTooLong(7 * DAY + 1)
     );
 }
+
+#[test]
+fn from_bytes_refuses_every_truncated_body_with_a_valid_digest() {
+    // the digest has no key, so a truncated body with a recomputed digest reaches the reader: every
+    // field read (master, epoch, sequence, both lengths, both bodies) must refuse the short read
+    let bytes = kept_state().to_bytes();
+    let body = &bytes[..bytes.len() - 32];
+    let mut compared = 0;
+    for n in 1..body.len() {
+        let mut b = body[..n].to_vec();
+        let d = alice_crypto::sha256::digest(&b);
+        b.extend_from_slice(&d);
+        assert!(
+            matches!(
+                DelegatedRevocations::from_bytes(&b),
+                Err(E::Malformed(_) | E::DelegateCert(_))
+            ),
+            "a body cut to {n} bytes was read"
+        );
+        compared += 1;
+    }
+    assert!(compared > 100, "{compared}");
+}

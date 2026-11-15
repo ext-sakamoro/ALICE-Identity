@@ -55,7 +55,7 @@ jobs:
       # signed by a delegate of the master (delegated_revocation: epoch and sequence, freshness, restore):
       # every one must run
       - name: Service certificate and delegated revocation tests
-        run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=24 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
+        run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
@@ -78,7 +78,7 @@ jobs:
       - name: Law tests (release)
         run: scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order
       - name: Service certificate and delegated revocation tests (release)
-        run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=24 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
+        run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
 
   float-environment:
     # ALICE-Law G14 on each OS: round-to-nearest-even and no flush-to-zero at run time in

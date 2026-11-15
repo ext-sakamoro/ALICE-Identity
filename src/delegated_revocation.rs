@@ -309,6 +309,15 @@ const fn freshness(
     }
 }
 
+/// `len` as the length field type `T`, or [`DelegatedRevocationError::Malformed`] with `what` when it does
+/// not fit
+fn length_field<T: TryFrom<usize>>(
+    len: usize,
+    what: &'static str,
+) -> Result<T, DelegatedRevocationError> {
+    T::try_from(len).map_err(|_| DelegatedRevocationError::Malformed(what))
+}
+
 #[derive(Debug, Clone)]
 struct Kept {
     master: PublicKey,
@@ -316,17 +325,38 @@ struct Kept {
     list: RevocationList,
     /// the list as the newest list of `master`, for [`Revocation::Checked`]
     view: CertRevocations,
+    /// the encoded delegate certificate and its length field, checked to fit a u16 when kept
+    cert_bytes: Vec<u8>,
+    cert_len: u16,
+    /// the encoded list and its length field, checked to fit a u32 when kept
+    list_bytes: Vec<u8>,
+    list_len: u32,
 }
 
 impl Kept {
-    fn new(master: PublicKey, delegate: DeviceCert, list: RevocationList) -> Self {
+    /// Keep `list` and its delegate, refusing a certificate whose encoding is over a u16 length
+    /// ([`DelegatedRevocationError::Malformed`] with `"certificate length"`) or a list whose encoding is over a
+    /// u32 length (`Malformed("list length")`), so that [`DelegatedRevocations::to_bytes`] only copies
+    fn new(
+        master: PublicKey,
+        delegate: DeviceCert,
+        list: RevocationList,
+    ) -> Result<Self, DelegatedRevocationError> {
+        let cert_bytes = delegate.to_bytes();
+        let cert_len = length_field(cert_bytes.len(), "certificate length")?;
+        let list_bytes = list.to_bytes();
+        let list_len = length_field(list_bytes.len(), "list length")?;
         let view = CertRevocations::with_list(&master, list.clone());
-        Self {
+        Ok(Self {
             master,
             delegate,
             list,
             view,
-        }
+            cert_bytes,
+            cert_len,
+            list_bytes,
+            list_len,
+        })
     }
 
     const fn epoch(&self) -> u64 {
@@ -365,7 +395,9 @@ impl DelegatedRevocations {
     /// 5. the (epoch, sequence) ordering of the module documentation.
     ///
     /// # Errors
-    /// See the order above
+    /// See the order above; then [`DelegatedRevocationError::Malformed`] with `"certificate length"` or
+    /// `"list length"` when the encoded certificate is over a u16 or the encoded list over a u32 length (the
+    /// fields of [`Self::to_bytes`]), and the kept state does not change
     pub fn accept(
         &mut self,
         list: RevocationList,
@@ -392,7 +424,7 @@ impl DelegatedRevocations {
         freshness(&list, now, window)?;
         let epoch = delegate.issued_at();
         let Some(kept) = &self.kept else {
-            self.kept = Some(Kept::new(*master, delegate.clone(), list));
+            self.kept = Some(Kept::new(*master, delegate.clone(), list)?);
             return Ok(Accepted::Replaced);
         };
         let kept_epoch = kept.epoch();
@@ -403,7 +435,7 @@ impl DelegatedRevocations {
             });
         }
         if epoch > kept_epoch {
-            self.kept = Some(Kept::new(*master, delegate.clone(), list));
+            self.kept = Some(Kept::new(*master, delegate.clone(), list)?);
             return Ok(Accepted::Replaced);
         }
         if kept.delegate.device_public() != delegate.device_public() {
@@ -433,7 +465,7 @@ impl DelegatedRevocations {
                 device_id: *dropped,
             });
         }
-        self.kept = Some(Kept::new(*master, delegate.clone(), list));
+        self.kept = Some(Kept::new(*master, delegate.clone(), list)?);
         Ok(Accepted::Replaced)
     }
 
@@ -508,19 +540,14 @@ impl DelegatedRevocations {
             None => b.push(0),
             Some(k) => {
                 b.push(1);
-                let cert = k.delegate.to_bytes();
-                let list = k.list.to_bytes();
-                // a certificate is at most MAX_DEVICE_CERT_LEN (450) bytes; a list is built by `issue` or
-                // `from_bytes`, whose id count is a u32, so its length is far under 4 GiB in any real use
-                let cert_len = u16::try_from(cert.len()).expect("a certificate fits a u16 length");
-                let list_len = u32::try_from(list.len()).expect("a kept list fits a u32 length");
+                // the lengths were checked to fit when the state was kept (`Kept::new`)
                 b.extend_from_slice(&k.master.0);
                 b.extend_from_slice(&k.epoch().to_be_bytes());
                 b.extend_from_slice(&k.list.sequence().to_be_bytes());
-                b.extend_from_slice(&cert_len.to_be_bytes());
-                b.extend_from_slice(&cert);
-                b.extend_from_slice(&list_len.to_be_bytes());
-                b.extend_from_slice(&list);
+                b.extend_from_slice(&k.cert_len.to_be_bytes());
+                b.extend_from_slice(&k.cert_bytes);
+                b.extend_from_slice(&k.list_len.to_be_bytes());
+                b.extend_from_slice(&k.list_bytes);
             }
         }
         let d = digest(&b);
@@ -611,27 +638,33 @@ impl<'a> Reader<'a> {
         Ok(head)
     }
 
+    /// The next `N` bytes, or [`DelegatedRevocationError::Malformed`] with `what` when fewer are left
+    fn take_array<const N: usize>(
+        &mut self,
+        what: &'static str,
+    ) -> Result<[u8; N], DelegatedRevocationError> {
+        let (head, rest) = self
+            .0
+            .split_first_chunk::<N>()
+            .ok_or(DelegatedRevocationError::Malformed(what))?;
+        self.0 = rest;
+        Ok(*head)
+    }
+
     fn u64(&mut self, what: &'static str) -> Result<u64, DelegatedRevocationError> {
-        Ok(u64::from_be_bytes(
-            self.take(8, what)?.try_into().expect("8 bytes"),
-        ))
+        Ok(u64::from_be_bytes(self.take_array(what)?))
     }
 
     fn state(&mut self) -> Result<Kept, DelegatedRevocationError> {
-        let master = PublicKey(self.take(32, "master")?.try_into().expect("32 bytes"));
+        let master = PublicKey(self.take_array("master")?);
         let epoch = self.u64("epoch")?;
         let sequence = self.u64("sequence")?;
-        let cert_len = u16::from_be_bytes(
-            self.take(2, "certificate length")?
-                .try_into()
-                .expect("2 bytes"),
-        );
+        let cert_len = u16::from_be_bytes(self.take_array("certificate length")?);
         let delegate = DeviceCert::from_bytes(self.take(usize::from(cert_len), "certificate")?)
             .map_err(|e: DeviceCertError| {
                 DelegatedRevocationError::DelegateCert(ServiceCertError::Cert(e))
             })?;
-        let list_len =
-            u32::from_be_bytes(self.take(4, "list length")?.try_into().expect("4 bytes"));
+        let list_len = u32::from_be_bytes(self.take_array("list length")?);
         let list_len = usize::try_from(list_len)
             .map_err(|_| DelegatedRevocationError::Malformed("list length"))?;
         let list = RevocationList::from_bytes(self.take(list_len, "list")?).map_err(
@@ -651,6 +684,48 @@ impl<'a> Reader<'a> {
         if delegate.issuer_public() != &master.0 {
             return Err(DelegatedRevocationError::Malformed("certificate issuer"));
         }
-        Ok(Kept::new(master, delegate, list))
+        Kept::new(master, delegate, list)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{length_field, DelegatedRevocationError, Reader};
+
+    #[test]
+    fn take_array_refuses_a_short_read_and_keeps_the_rest() {
+        let mut r = Reader(&[1, 2, 3]);
+        assert_eq!(
+            r.take_array::<4>("four"),
+            Err(DelegatedRevocationError::Malformed("four"))
+        );
+        assert_eq!(r.0, &[1, 2, 3]);
+        assert_eq!(r.take_array::<2>("two"), Ok([1, 2]));
+        assert_eq!(r.0, &[3]);
+        assert_eq!(
+            r.take_array::<2>("two"),
+            Err(DelegatedRevocationError::Malformed("two"))
+        );
+    }
+
+    /// The length check of `Kept::new` at a width where an over-long value can be built (a list over
+    /// 4 GiB cannot be in a test): a length that does not fit is refused, never truncated
+    #[test]
+    fn length_field_refuses_a_length_that_does_not_fit() {
+        assert_eq!(length_field::<u8>(255, "len"), Ok(255));
+        assert_eq!(
+            length_field::<u8>(256, "len"),
+            Err(DelegatedRevocationError::Malformed("len"))
+        );
+        assert_eq!(length_field::<u16>(65_535, "len"), Ok(u16::MAX));
+        assert_eq!(
+            length_field::<u16>(65_536, "certificate length"),
+            Err(DelegatedRevocationError::Malformed("certificate length"))
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            length_field::<u32>(1_usize << 32, "list length"),
+            Err(DelegatedRevocationError::Malformed("list length"))
+        );
     }
 }

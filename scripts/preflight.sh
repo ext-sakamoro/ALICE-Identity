@@ -874,7 +874,7 @@ step "ci.yml / test: Recovery tests (feature recovery)"
 step "ci.yml / test: Service certificate and delegated revocation tests"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=24 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
 )
 
 step "ci.yml / release: Test (release)"
@@ -892,7 +892,7 @@ step "ci.yml / release: Law tests (release)"
 step "ci.yml / release: Service certificate and delegated revocation tests (release)"
 (
   gh_step ci.yml.release
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=24 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"
