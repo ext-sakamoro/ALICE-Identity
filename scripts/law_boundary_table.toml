@@ -147,6 +147,30 @@ class = "format version"
 reason = "the format version byte of the list"
 
 [[function]]
+file = "src/delegated_revocation.rs"
+name = "from_bytes"
+class = "revocation state"
+reason = "reads the stored state of delegated revocations (master key, epoch, sequence, delegate certificate, signed revocation list, SHA-256 of the bytes)"
+
+[[function]]
+file = "src/delegated_revocation.rs"
+name = "issue_revocation_delegate"
+class = "device certificate"
+reason = "a service certificate for the revocation delegate: its 32-byte Ed25519 signing key and the all-zero Noise key, signed by the master key"
+
+[[function]]
+file = "src/delegated_revocation.rs"
+name = "restore"
+class = "revocation state"
+reason = "reads the stored state of delegated revocations and checks its certificate and list signatures under the master key"
+
+[[function]]
+file = "src/delegated_revocation.rs"
+name = "to_bytes"
+class = "revocation state"
+reason = "the encoding of the kept state of delegated revocations"
+
+[[function]]
 file = "src/credential.rs"
 name = "issue"
 class = "signed message"

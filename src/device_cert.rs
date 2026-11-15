@@ -439,7 +439,7 @@ impl DeviceCert {
     }
 
     /// Version, issuer and signature
-    fn verify_signature(&self, master: &PublicKey) -> Result<(), DeviceCertError> {
+    pub(crate) fn verify_signature(&self, master: &PublicKey) -> Result<(), DeviceCertError> {
         if self.version != DEVICE_CERT_VERSION {
             return Err(DeviceCertError::UnsupportedVersion(self.version));
         }

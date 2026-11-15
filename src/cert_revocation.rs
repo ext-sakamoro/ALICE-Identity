@@ -17,7 +17,7 @@
 //! Members that receive lists in different orders converge: a higher sequence replaces a lower
 //! one, a lower one is ignored, and two different lists with the same sequence are a conflict.
 
-use crate::device_cert::{DeviceCert, DeviceId};
+use crate::device_cert::{DeviceCert, DeviceId, MAX_CLOCK_SKEW_SECS};
 use alice_sign::{KeyPair, PublicKey, Signature};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -224,6 +224,27 @@ impl RevocationList {
         Ok(())
     }
 
+    /// Whether the list is fresh at `now`: `now - window <= issued_at <= now + MAX_CLOCK_SKEW_SECS`
+    ///
+    /// A list older than `window` is stale, and a list dated beyond the clock-skew leeway is not fresh
+    /// either (it is from the future). The arithmetic saturates, so a `window` larger than `now` makes
+    /// every list up to the leeway fresh, and `now` near `u64::MAX` does not wrap.
+    ///
+    /// The answer is only as good as the caller's clock (this crate reads none):
+    ///
+    /// - a clock running ahead makes every list look stale, including the newest one, so a caller that
+    ///   requires a fresh list refuses everything until the clock is right;
+    /// - a clock running behind makes an old list look fresh for as far as the clock is behind. On a
+    ///   fresh install (nothing kept yet) nothing else bounds this: the (epoch, sequence) floor of
+    ///   [`crate::delegated_revocation::DelegatedRevocations`] only refuses lists older than one already
+    ///   kept. The certificate checks made under the same clock (the signer's validity window) are the
+    ///   only other bound.
+    #[must_use]
+    pub const fn is_fresh(&self, now: u64, window: u64) -> bool {
+        self.issued_at >= now.saturating_sub(window)
+            && self.issued_at <= now.saturating_add(MAX_CLOCK_SKEW_SECS)
+    }
+
     /// Whether `device_id` is on the list
     #[must_use]
     pub fn contains(&self, device_id: &DeviceId) -> bool {
@@ -322,6 +343,14 @@ impl CertRevocations {
                 Ok(Accepted::Replaced)
             }
         }
+    }
+
+    /// The revocations that hold `list` as the newest list of `master`, whoever signed it (the caller
+    /// has checked that `master` vouches for the signer); a view for [`crate::artifact::Revocation`]
+    pub(crate) fn with_list(master: &PublicKey, list: RevocationList) -> Self {
+        let mut lists = BTreeMap::new();
+        lists.insert(master.0, list);
+        Self { lists }
     }
 
     /// The sequence of the list kept for `master`, if any

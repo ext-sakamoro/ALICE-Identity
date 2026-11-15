@@ -25,6 +25,7 @@ pub mod cert_revocation;
 pub mod claim_schema;
 pub mod contact_card;
 pub mod credential;
+pub mod delegated_revocation;
 pub mod device_cert;
 pub mod did;
 pub mod did_document;
