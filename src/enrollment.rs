@@ -32,13 +32,13 @@
 //!                   || device_public (32) || noise_static (32) || requested_at (u64 BE)
 //!          bytes  = body || signature (64, by the device key)
 //!          text   = ENROLLMENT_REQUEST_TEXT_PREFIX || base32 of bytes
-//! short code = the first 8 Crockford base32 characters of
-//!              SHA-256(ENROLLMENT_SHORT_CODE_CONTEXT || request bytes)[..5], as XXXX-XXXX
+//! short code = the first 10 Crockford base32 characters (50 bits) of
+//!              SHA-256(ENROLLMENT_SHORT_CODE_CONTEXT || request bytes), as XXXXX-XXXXX
 //! ```
 //!
 //! A ticket holds for `issued_at <= now + MAX_CLOCK_SKEW_SECS` and `now < not_after`, the window of a device
 //! certificate, and for at most [`ENROLLMENT_TICKET_MAX_LIFETIME_SECS`]. The desk accepts a ticket id once
-//! (the same record [`crate::invite::InviteRedemptions`] keeps) and refuses a request whose `requested_at`
+//! (the same kind of record [`crate::invite::InviteRedemptions`] keeps, one per desk) and refuses a request whose `requested_at`
 //! lies outside the ticket's window. The ticket and the request are signed under their own contexts, so a
 //! contact invite (the same field order) never reads as a ticket. A ticket for a subject of the method
 //! reserved for services is not issued: services are certified by [`crate::service_cert`].
@@ -503,13 +503,17 @@ impl EnrollmentRequest {
         Self::from_bytes(&decode_text(text, ENROLLMENT_REQUEST_TEXT_PREFIX)?)
     }
 
-    /// The code both screens show before the master approves (`XXXX-XXXX`, Crockford base32)
+    /// The code both screens show before the master approves (`XXXXX-XXXXX`, Crockford base32, 50 bits)
+    ///
+    /// The code is not a commitment: a party that intercepts the request on its way to the master can make
+    /// requests of its own and search for one whose code matches, about 2^50 signatures within the ticket's
+    /// window (at most 15 minutes) for an even chance
     #[must_use]
     pub fn short_code(&self) -> String {
         let mut m = ENROLLMENT_SHORT_CODE_CONTEXT.to_vec();
         m.extend_from_slice(&self.to_bytes());
-        let code = base32::crockford_prefix(&digest(&m)[..5], 8);
-        format!("{}-{}", &code[..4], &code[4..])
+        let code = base32::crockford_prefix(&digest(&m)[..7], 10);
+        format!("{}-{}", &code[..5], &code[5..])
     }
 
     /// Accept the master's grant for this request at `now`: it verifies under the ticket's master key and

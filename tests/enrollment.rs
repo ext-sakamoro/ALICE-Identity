@@ -20,7 +20,7 @@ const REQUEST_HEX: &str = include_str!("data/enrollment_request.hex");
 const REQUEST_TEXT: &str = include_str!("data/enrollment_request.txt");
 const GRANT_HEX: &str = include_str!("data/enrollment_grant.hex");
 /// `short_code` of tests/data/enrollment_vectors.json
-const SHORT_CODE: &str = "TWX0-1FQX";
+const SHORT_CODE: &str = "TWX01-FQXJ8";
 
 const SUBJECT: &str = "did:alice:enroll-oracle";
 const TICKET_ID: [u8; 16] = [

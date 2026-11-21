@@ -22,10 +22,10 @@ def request(device, subject, master_pub, ticket_id, noise, requested_at):
     return body + sign(device, b"alice-identity enrollment-request v1", body)
 
 def short_code(req):
-    h = hashlib.sha256(b"alice-identity enrollment-request short-code v1" + req).digest()[:5]
-    n = int.from_bytes(h, "big"); out = ""
-    for i in range(8): out = CROCKFORD[n & 31] + out; n >>= 5
-    return out[:4] + "-" + out[4:]
+    h = hashlib.sha256(b"alice-identity enrollment-request short-code v1" + req).digest()[:7]
+    n = int.from_bytes(h, "big") >> 6; out = ""
+    for i in range(10): out = CROCKFORD[n & 31] + out; n >>= 5
+    return out[:5] + "-" + out[5:]
 
 def device_cert(master, subject, device_pub, noise, issued_at, not_after):
     s = subject.encode()
