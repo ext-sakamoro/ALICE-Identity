@@ -645,7 +645,7 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 #   - g3-ir.yml:ir:No negated fma result in alice-identity's release IR [target=aarch64-unknown-linux-gnu] (its `if:` runs on what happened earlier on the runner)
 #   - g3-ir.yml:gate:gate (reads NEEDS, a value only the runner has)
 #   - public-text.yml:public-text: uses actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 (an action this file cannot run)
-#   - public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (no cargo / grep)
+#   - public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (reads BEFORE, PR_BASE, a value only the runner has)
 #   - semver-checks.yml:changes:decide (reads AFTER, BEFORE, CREATED, EVENT, FORCED, PR_BASE, PR_HEAD, a value only the runner has)
 #   - semver-checks.yml:gate:gate (reads NEEDS, a value only the runner has)
 
@@ -1011,7 +1011,7 @@ not_run 'g3-ir.yml:ir:No negated fma result in alice-identity'"'"'s release IR [
 not_run 'g3-ir.yml:ir:Targets for the pinned toolchain [target=aarch64-unknown-linux-gnu] (no cargo / grep)'
 not_run 'g3-ir.yml:ir:No negated fma result in alice-identity'"'"'s release IR [target=aarch64-unknown-linux-gnu] (its `if:` runs on what happened earlier on the runner)'
 not_run 'public-text.yml:public-text: uses actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 (an action this file cannot run)'
-not_run 'public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (no cargo / grep)'
+not_run 'public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (reads BEFORE, PR_BASE, a value only the runner has)'
 leg_not_run ci.yml:test ubuntu-latest
 leg_not_run ci.yml:test macos-latest
 leg_not_run ci.yml:release ubuntu-latest
