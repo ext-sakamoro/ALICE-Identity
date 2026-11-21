@@ -10,6 +10,7 @@ use alice_identity::artifact::{sha256_payload, sign_artifact};
 use alice_identity::contact_card::ContactCard;
 use alice_identity::device_cert::DeviceCert;
 use alice_identity::did::Did;
+use alice_identity::enrollment::{EnrollmentRequest, EnrollmentTicket};
 use alice_identity::invite::Invite;
 use alice_identity::jws;
 use alice_identity::safety_number::safety_number;
@@ -186,5 +187,40 @@ fn safety_number_bytes() {
         "safety number",
         n.as_bytes(),
         "66fc0d6632ae406420a468bd0a22796eeda724e2ee30f7067bac24333fb323b6",
+    );
+}
+
+/// The scenario of tests/data/enrollment_vectors.json (ticket); the digest is computed outside this crate
+#[test]
+fn enrollment_ticket() {
+    let subject = Did::parse("did:alice:enroll-oracle").unwrap();
+    let id: [u8; 16] = core::array::from_fn(|i| 16 + i as u8);
+    let ticket =
+        EnrollmentTicket::issue(&master(), &subject, id, ISSUED_AT, ISSUED_AT + 600).unwrap();
+    assert_golden(
+        "enrollment ticket",
+        &ticket.to_bytes(),
+        "5571ac570b6e4daec4391804abe31b2402f36d550769d88dae5ce14c38247e1f",
+    );
+}
+
+/// The scenario of tests/data/enrollment_vectors.json (request by the device seed 9); the digest is computed
+/// outside this crate
+#[test]
+fn enrollment_request() {
+    let subject = Did::parse("did:alice:enroll-oracle").unwrap();
+    let id: [u8; 16] = core::array::from_fn(|i| 16 + i as u8);
+    let ticket =
+        EnrollmentTicket::issue(&master(), &subject, id, ISSUED_AT, ISSUED_AT + 600).unwrap();
+    let request = EnrollmentRequest::new(
+        &KeyPair::from_seed([9; 32]),
+        &ticket,
+        [0x44; 32],
+        ISSUED_AT + 60,
+    );
+    assert_golden(
+        "enrollment request",
+        &request.to_bytes(),
+        "c7219bf26379e9e604bd098d555bca27817ffeefb17a6d4e81562cc3daa2e518",
     );
 }

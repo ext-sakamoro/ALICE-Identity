@@ -294,13 +294,49 @@ impl Invite {
     }
 }
 
-/// What the record holds for one invite id
+/// What a record of single-use ids holds for one id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Spent {
-    /// Used; kept until the invite's `not_after` (after it, the invite is refused as expired anyway)
+pub(crate) enum Spent {
+    /// Used; kept until the token's `not_after` (after it, the token is refused as expired anyway)
     Redeemed { not_after: u64 },
     /// Cancelled by the issuer before use; kept until the issuer drops the record
     Cancelled,
+}
+
+/// The used and cancelled ids of one issuer's single-use tokens: the invites here, the enrollment tickets
+/// of [`crate::enrollment`]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SpentIds {
+    spent: BTreeMap<[u8; 16], Spent>,
+}
+
+impl SpentIds {
+    /// What the record holds for `id`, if anything
+    pub(crate) fn get(&self, id: &[u8; 16]) -> Option<Spent> {
+        self.spent.get(id).copied()
+    }
+
+    /// Record `id` as used by a token holding until before `not_after` (the caller checked [`SpentIds::get`])
+    pub(crate) fn redeem(&mut self, id: [u8; 16], not_after: u64) {
+        self.spent.insert(id, Spent::Redeemed { not_after });
+    }
+
+    /// Mark `id` as not to be accepted (an id already used stays used)
+    pub(crate) fn cancel(&mut self, id: [u8; 16]) {
+        self.spent.entry(id).or_insert(Spent::Cancelled);
+    }
+
+    /// Drop the uses whose tokens have expired at `now` (cancellations stay)
+    pub(crate) fn prune(&mut self, now: u64) {
+        self.spent.retain(|_, s| match s {
+            Spent::Redeemed { not_after } => now < *not_after,
+            Spent::Cancelled => true,
+        });
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.spent.len()
+    }
 }
 
 /// The issuer's record of its used and cancelled invites
@@ -312,7 +348,7 @@ enum Spent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InviteRedemptions {
     issuer_public: [u8; 32],
-    spent: BTreeMap<[u8; 16], Spent>,
+    spent: SpentIds,
 }
 
 impl InviteRedemptions {
@@ -321,7 +357,9 @@ impl InviteRedemptions {
     pub const fn new(issuer: PublicKey) -> Self {
         Self {
             issuer_public: issuer.0,
-            spent: BTreeMap::new(),
+            spent: SpentIds {
+                spent: BTreeMap::new(),
+            },
         }
     }
 
@@ -342,12 +380,7 @@ impl InviteRedemptions {
             Some(Spent::Redeemed { .. }) => Err(InviteError::AlreadyRedeemed),
             Some(Spent::Cancelled) => Err(InviteError::Cancelled),
             None => {
-                self.spent.insert(
-                    invite.id,
-                    Spent::Redeemed {
-                        not_after: invite.not_after,
-                    },
-                );
+                self.spent.redeem(invite.id, invite.not_after);
                 Ok(())
             }
         }
@@ -355,15 +388,12 @@ impl InviteRedemptions {
 
     /// Mark `invite_id` as not to be accepted (an invite already used stays refused as used)
     pub fn cancel(&mut self, invite_id: [u8; 16]) {
-        self.spent.entry(invite_id).or_insert(Spent::Cancelled);
+        self.spent.cancel(invite_id);
     }
 
     /// Drop the redemptions whose invites have expired at `now` (cancellations stay)
     pub fn prune(&mut self, now: u64) {
-        self.spent.retain(|_, s| match s {
-            Spent::Redeemed { not_after } => now < *not_after,
-            Spent::Cancelled => true,
-        });
+        self.spent.prune(now);
     }
 
     /// The number of recorded ids
@@ -374,6 +404,6 @@ impl InviteRedemptions {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.spent.is_empty()
+        self.spent.len() == 0
     }
 }

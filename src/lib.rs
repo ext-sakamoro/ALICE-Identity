@@ -29,6 +29,7 @@ pub mod delegated_revocation;
 pub mod device_cert;
 pub mod did;
 pub mod did_document;
+pub mod enrollment;
 pub mod errors;
 pub mod invite;
 pub mod jws;
