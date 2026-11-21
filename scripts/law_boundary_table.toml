@@ -363,6 +363,56 @@ class = "invite"
 reason = "the encoded invite (issuer did:key, key, id, validity, Ed25519 signature)"
 
 [[function]]
+file = "src/enrollment.rs"
+name = "cancel"
+class = "enrollment"
+reason = "marks a 16-byte ticket id as cancelled in the master's record"
+[[function]]
+file = "src/enrollment.rs"
+name = "device_public"
+class = "enrollment"
+reason = "the 32-byte Ed25519 device key a request names"
+[[function]]
+file = "src/enrollment.rs"
+name = "from_bytes"
+class = "enrollment"
+reason = "reads and accepts an encoded ticket (master signature) or request (device signature)"
+[[function]]
+file = "src/enrollment.rs"
+name = "issue"
+class = "enrollment"
+reason = "signs a ticket: subject, master key, 16-byte ticket id and its window"
+[[function]]
+file = "src/enrollment.rs"
+name = "master_public"
+class = "enrollment"
+reason = "the 32-byte Ed25519 master key a ticket or request names"
+[[function]]
+file = "src/enrollment.rs"
+name = "new"
+class = "enrollment"
+reason = "signs a request with the device key: the ticket's subject, master key and id, the device and Noise keys"
+[[function]]
+file = "src/enrollment.rs"
+name = "noise_static"
+class = "enrollment"
+reason = "the 32-byte X25519 Noise static key a request names"
+[[function]]
+file = "src/enrollment.rs"
+name = "signed_message"
+class = "enrollment"
+reason = "the context and body a ticket or request signature covers"
+[[function]]
+file = "src/enrollment.rs"
+name = "ticket_id"
+class = "enrollment"
+reason = "the 16-byte ticket id the caller drew from the OS random source"
+[[function]]
+file = "src/enrollment.rs"
+name = "to_bytes"
+class = "enrollment"
+reason = "the encoded ticket or request (body and signature)"
+[[function]]
 file = "src/safety_number.rs"
 name = "as_bytes"
 class = "digest"
