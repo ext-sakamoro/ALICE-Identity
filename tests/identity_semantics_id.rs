@@ -334,7 +334,7 @@ fn the_identifier_is_the_fold_of_the_table() {
 fn the_identifier_is_the_recorded_value() {
     assert_eq!(
         hex(&IDENTITY_SEMANTICS_ID),
-        "76603ef9538c3d69aa813656b3f04d349132e938bb86365b0f7081ecf1f4c104"
+        "730fd953c2acbccbefb43dc238a90f8aa63b19f4da81abca8d15cb68904a3974"
     );
 }
 

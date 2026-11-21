@@ -2,7 +2,7 @@
 //!
 //! The recorded-bit tests in `tests/semantics_golden.rs` pin the bytes the crate produces from fixed Ed25519
 //! seeds: a device certificate, an artifact signature, a signed claim set, a `did:key`, a compact JWS, a contact
-//! card, an invite and a safety number.
+//! card, an invite, a safety number, an enrollment ticket and an enrollment request.
 //! [`IDENTITY_SEMANTICS_ID`] folds those digests. The crate depends on no Law-bearing crate (alice-sign, which
 //! gives it Ed25519 and SHA-256, has no identifier), so no upstream identifier is folded. Two builds with the
 //! same identifier produce the same bytes for every pinned scenario.
@@ -10,7 +10,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 76603ef9538c3d69aa813656b3f04d349132e938bb86365b0f7081ecf1f4c104
+//! 730fd953c2acbccbefb43dc238a90f8aa63b19f4da81abca8d15cb68904a3974
 //! ```
 //!
 //! # Fold
@@ -84,6 +84,14 @@ pub const IDENTITY_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "safety number",
         hex32("66fc0d6632ae406420a468bd0a22796eeda724e2ee30f7067bac24333fb323b6"),
     ),
+    (
+        "enrollment ticket",
+        hex32("5571ac570b6e4daec4391804abe31b2402f36d550769d88dae5ce14c38247e1f"),
+    ),
+    (
+        "enrollment request",
+        hex32("c7219bf26379e9e604bd098d555bca27817ffeefb17a6d4e81562cc3daa2e518"),
+    ),
 ];
 
 /// The crate version and toolchain the pins were last checked against
@@ -92,4 +100,4 @@ pub const IDENTITY_SEMANTICS_CHECKED_AT: (&str, &str) = ("3.0.0", "1.98.1");
 /// Content hash of what this crate produces for fixed keys: the fold of [`IDENTITY_SEMANTICS_PINS`]
 /// described in the [module documentation](self)
 pub const IDENTITY_SEMANTICS_ID: [u8; 32] =
-    hex32("76603ef9538c3d69aa813656b3f04d349132e938bb86365b0f7081ecf1f4c104");
+    hex32("730fd953c2acbccbefb43dc238a90f8aa63b19f4da81abca8d15cb68904a3974");
