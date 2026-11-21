@@ -9,7 +9,8 @@ use alice_identity::device_cert::{DeviceCert, DeviceCertError, MAX_CLOCK_SKEW_SE
 use alice_identity::did::Did;
 use alice_identity::enrollment::{
     EnrollmentDesk, EnrollmentError, EnrollmentRequest, EnrollmentTicket,
-    ENROLLMENT_REQUEST_CONTEXT, ENROLLMENT_TICKET_MAX_LIFETIME_SECS,
+    ENROLLMENT_CODE_MAX_MISMATCHES, ENROLLMENT_REQUEST_CONTEXT,
+    ENROLLMENT_TICKET_MAX_LIFETIME_SECS,
 };
 use alice_identity::invite::Invite;
 use alice_sign::KeyPair;
@@ -59,6 +60,19 @@ fn ticket() -> EnrollmentTicket {
 
 fn request() -> EnrollmentRequest {
     EnrollmentRequest::new(&device(), &ticket(), NOISE, REQUESTED_AT)
+}
+
+/// The master's two steps with the right code: confirm (the code the new install shows), then approve
+fn grant(
+    d: &mut EnrollmentDesk,
+    master: &KeyPair,
+    ticket: &EnrollmentTicket,
+    request: &EnrollmentRequest,
+    now: u64,
+    not_after: u64,
+) -> Result<DeviceCert, EnrollmentError> {
+    let confirmed = d.confirm(ticket, request, &request.short_code())?;
+    d.approve(master, &confirmed, now, not_after)
 }
 
 fn desk() -> EnrollmentDesk {
@@ -114,9 +128,15 @@ fn the_request_is_the_reference_request_with_its_short_code() {
 #[test]
 fn the_desk_grants_the_reference_certificate_and_the_device_accepts_it() {
     let mut d = desk();
-    let cert = d
-        .approve(&master(), &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER)
-        .unwrap();
+    let cert = grant(
+        &mut d,
+        &master(),
+        &ticket(),
+        &request(),
+        GRANT_AT,
+        GRANT_NOT_AFTER,
+    )
+    .unwrap();
     assert_eq!(cert.to_bytes(), unhex(GRANT_HEX));
     assert_eq!(d.len(), 1);
     request().accept_grant(&cert, GRANT_AT).unwrap();
@@ -127,8 +147,15 @@ fn the_desk_grants_the_reference_certificate_and_the_device_accepts_it() {
 #[test]
 fn a_ticket_is_used_once() {
     let mut d = desk();
-    d.approve(&master(), &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER)
-        .unwrap();
+    grant(
+        &mut d,
+        &master(),
+        &ticket(),
+        &request(),
+        GRANT_AT,
+        GRANT_NOT_AFTER,
+    )
+    .unwrap();
     let other = EnrollmentRequest::new(
         &KeyPair::from_seed([10; 32]),
         &ticket(),
@@ -136,11 +163,25 @@ fn a_ticket_is_used_once() {
         REQUESTED_AT,
     );
     assert_eq!(
-        d.approve(&master(), &ticket(), &other, GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &other,
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::AlreadyUsed)
     );
     assert_eq!(
-        d.approve(&master(), &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &request(),
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::AlreadyUsed)
     );
     assert_eq!(d.len(), 1);
@@ -185,7 +226,14 @@ fn a_contact_invite_is_not_an_enrollment_ticket() {
 fn the_ticket_window_is_enforced_at_approval() {
     let mut d = desk();
     assert_eq!(
-        d.approve(&master(), &ticket(), &request(), NOT_AFTER, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &request(),
+            NOT_AFTER,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::Expired {
             now: NOT_AFTER,
             not_after: NOT_AFTER
@@ -193,7 +241,14 @@ fn the_ticket_window_is_enforced_at_approval() {
     );
     let early = ISSUED_AT - MAX_CLOCK_SKEW_SECS - 1;
     assert_eq!(
-        d.approve(&master(), &ticket(), &request(), early, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &request(),
+            early,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::NotYetValid {
             now: early,
             issued_at: ISSUED_AT
@@ -201,7 +256,8 @@ fn the_ticket_window_is_enforced_at_approval() {
     );
     // refused approvals record nothing: the ticket still works in its window
     assert!(d.is_empty());
-    d.approve(
+    grant(
+        &mut d,
         &master(),
         &ticket(),
         &request(),
@@ -216,7 +272,14 @@ fn a_request_made_outside_the_ticket_window_is_refused() {
     let mut d = desk();
     let late = EnrollmentRequest::new(&device(), &ticket(), NOISE, NOT_AFTER);
     assert_eq!(
-        d.approve(&master(), &ticket(), &late, GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &late,
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::RequestOutsideTicket)
     );
     assert!(d.is_empty());
@@ -231,7 +294,14 @@ fn a_request_for_another_ticket_or_subject_is_refused() {
         EnrollmentTicket::issue(&master(), &subject(), other_id, ISSUED_AT, NOT_AFTER).unwrap();
     let for_other = EnrollmentRequest::new(&device(), &other_ticket, NOISE, REQUESTED_AT);
     assert_eq!(
-        d.approve(&master(), &ticket(), &for_other, GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &for_other,
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::WrongTicket)
     );
     // same id, another subject: the request names the subject it asks to join
@@ -240,7 +310,14 @@ fn a_request_for_another_ticket_or_subject_is_refused() {
         EnrollmentTicket::issue(&master(), &jane, TICKET_ID, ISSUED_AT, NOT_AFTER).unwrap();
     let for_jane = EnrollmentRequest::new(&device(), &jane_ticket, NOISE, REQUESTED_AT);
     assert_eq!(
-        d.approve(&master(), &ticket(), &for_jane, GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &for_jane,
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::SubjectMismatch)
     );
     assert!(d.is_empty());
@@ -251,14 +328,28 @@ fn another_master_cannot_approve_at_this_desk() {
     let mut d = desk();
     let stranger = KeyPair::from_seed([11; 32]);
     assert_eq!(
-        d.approve(&stranger, &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &stranger,
+            &ticket(),
+            &request(),
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::WrongMaster)
     );
     let strangers_ticket =
         EnrollmentTicket::issue(&stranger, &subject(), TICKET_ID, ISSUED_AT, NOT_AFTER).unwrap();
     let r = EnrollmentRequest::new(&device(), &strangers_ticket, NOISE, REQUESTED_AT);
     assert_eq!(
-        d.approve(&master(), &strangers_ticket, &r, GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &strangers_ticket,
+            &r,
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::WrongMaster)
     );
     assert!(d.is_empty());
@@ -362,12 +453,26 @@ fn cancelled_tickets_stay_refused_and_prune_drops_only_expired_uses() {
     let mut d = desk();
     d.cancel(TICKET_ID);
     assert_eq!(
-        d.approve(&master(), &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER),
+        grant(
+            &mut d,
+            &master(),
+            &ticket(),
+            &request(),
+            GRANT_AT,
+            GRANT_NOT_AFTER
+        ),
         Err(EnrollmentError::Cancelled)
     );
     let mut d = desk();
-    d.approve(&master(), &ticket(), &request(), GRANT_AT, GRANT_NOT_AFTER)
-        .unwrap();
+    grant(
+        &mut d,
+        &master(),
+        &ticket(),
+        &request(),
+        GRANT_AT,
+        GRANT_NOT_AFTER,
+    )
+    .unwrap();
     d.prune(NOT_AFTER - 1);
     assert_eq!(d.len(), 1);
     d.prune(NOT_AFTER);
@@ -439,4 +544,119 @@ fn degenerate_bytes_and_text_are_refused_without_panic() {
         EnrollmentTicket::from_text(REQUEST_TEXT.trim()),
         Err(EnrollmentError::BadText)
     );
+}
+
+#[test]
+fn a_wrong_code_issues_nothing_and_the_right_code_then_grants() {
+    let mut d = desk();
+    assert_eq!(
+        d.confirm(&ticket(), &request(), "AAAAA-AAAAA"),
+        Err(EnrollmentError::CodeMismatch { remaining: 2 })
+    );
+    // nothing recorded as used, nothing issued: the same ticket still grants with the right code
+    assert!(d.is_empty());
+    assert_eq!(d.mismatches(&TICKET_ID), 1);
+    let confirmed = d.confirm(&ticket(), &request(), SHORT_CODE).unwrap();
+    let cert = d
+        .approve(&master(), &confirmed, GRANT_AT, GRANT_NOT_AFTER)
+        .unwrap();
+    assert_eq!(cert.to_bytes(), unhex(GRANT_HEX));
+}
+
+#[test]
+fn too_many_wrong_codes_cancel_the_ticket_and_the_right_code_is_refused_after() {
+    let mut d = desk();
+    // confirmed before the guesses: the cancellation still stops its approval
+    let confirmed = d.confirm(&ticket(), &request(), SHORT_CODE).unwrap();
+    for remaining in [2, 1, 0] {
+        assert_eq!(
+            d.confirm(&ticket(), &request(), "AAAAA-AAAAA"),
+            Err(EnrollmentError::CodeMismatch { remaining })
+        );
+    }
+    assert_eq!(
+        d.confirm(&ticket(), &request(), SHORT_CODE),
+        Err(EnrollmentError::Cancelled)
+    );
+    assert_eq!(
+        d.approve(&master(), &confirmed, GRANT_AT, GRANT_NOT_AFTER),
+        Err(EnrollmentError::Cancelled)
+    );
+    assert_eq!(ENROLLMENT_CODE_MAX_MISMATCHES, 3);
+}
+
+#[test]
+fn mismatches_restored_from_an_earlier_run_count_toward_the_limit() {
+    let mut d = desk();
+    d.restore_mismatches(TICKET_ID, 2);
+    assert_eq!(
+        d.confirm(&ticket(), &request(), "AAAAA-AAAAA"),
+        Err(EnrollmentError::CodeMismatch { remaining: 0 })
+    );
+    assert_eq!(
+        d.confirm(&ticket(), &request(), SHORT_CODE),
+        Err(EnrollmentError::Cancelled)
+    );
+    let mut d = desk();
+    d.restore_mismatches(TICKET_ID, ENROLLMENT_CODE_MAX_MISMATCHES);
+    assert_eq!(
+        d.confirm(&ticket(), &request(), SHORT_CODE),
+        Err(EnrollmentError::Cancelled)
+    );
+}
+
+#[test]
+fn the_typed_code_is_read_without_case_dashes_or_crockford_aliases() {
+    // SHORT_CODE is TWX01-FQXJ8: O reads as 0, I and L as 1, case and dashes do not matter
+    assert_eq!(SHORT_CODE, "TWX01-FQXJ8");
+    for typed in [
+        "TWX01-FQXJ8",
+        "twx01-fqxj8",
+        "TWX01FQXJ8",
+        "TWXO1-FQXJ8",
+        "twxoi fqxj8",
+        "TWX0L-FQ-XJ8",
+    ] {
+        let mut d = desk();
+        assert!(
+            d.confirm(&ticket(), &request(), typed).is_ok(),
+            "{typed} did not read as {SHORT_CODE}"
+        );
+    }
+    // a code one character off, a prefix, and the code with an extra character are wrong
+    for typed in ["TWX01-FQXJ9", "TWX01-FQXJ", "TWX01-FQXJ88", ""] {
+        let mut d = desk();
+        assert!(
+            matches!(
+                d.confirm(&ticket(), &request(), typed),
+                Err(EnrollmentError::CodeMismatch { .. })
+            ),
+            "{typed:?} was accepted"
+        );
+    }
+}
+
+#[test]
+fn the_grant_is_for_the_request_whose_code_was_compared() {
+    // the master compares the code of request A; a request B swapped in later has another code, and the
+    // confirmed value carries A only, so the grant names A's device key
+    let mut d = desk();
+    let b = EnrollmentRequest::new(
+        &KeyPair::from_seed([10; 32]),
+        &ticket(),
+        NOISE,
+        REQUESTED_AT,
+    );
+    assert_ne!(b.short_code(), SHORT_CODE);
+    assert!(matches!(
+        d.confirm(&ticket(), &b, SHORT_CODE),
+        Err(EnrollmentError::CodeMismatch { .. })
+    ));
+    let confirmed = d.confirm(&ticket(), &request(), SHORT_CODE).unwrap();
+    assert_eq!(confirmed.request(), &request());
+    assert_eq!(confirmed.ticket(), &ticket());
+    let cert = d
+        .approve(&master(), &confirmed, GRANT_AT, GRANT_NOT_AFTER)
+        .unwrap();
+    assert_eq!(cert.device_public(), &device().public().0);
 }

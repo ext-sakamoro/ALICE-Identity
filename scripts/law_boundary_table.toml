@@ -369,6 +369,16 @@ class = "enrollment"
 reason = "marks a 16-byte ticket id as cancelled in the master's record"
 [[function]]
 file = "src/enrollment.rs"
+name = "mismatches"
+class = "enrollment"
+reason = "reads the wrong-code count recorded against a 16-byte ticket id"
+[[function]]
+file = "src/enrollment.rs"
+name = "restore_mismatches"
+class = "enrollment"
+reason = "restores a wrong-code count against a 16-byte ticket id; at the limit it cancels the ticket"
+[[function]]
+file = "src/enrollment.rs"
 name = "device_public"
 class = "enrollment"
 reason = "the 32-byte Ed25519 device key a request names"

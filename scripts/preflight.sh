@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev 37b834045d17a627624b94d26a852520f66fe725
+# generator rev 7130af3d4787963c57ac6e73d8b3113b33d89689
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -167,7 +167,8 @@ heavy_slot_acquire() {
     fi
   done
   exec 8< <(exec perl -MFcntl=:flock -MTime::HiRes=time,sleep -e '
-    my ($dir, $n, $limit, $stall, $class, $age, $qname, $lock, $title, $label, $rkey, $hold, $dscript, $dkey) = @ARGV;
+    my ($dir, $n, $limit, $stall, $class, $age, $qname, $lock, $title, $label, $rkey, $hold, $dscript, $dkey, $pool, $infop) = @ARGV;
+    my $orig = $class;  # (a promoted work waiter ranks as land but is still a work take for the one-work rule)
     # disk (disk_reserve.py admit): the head of the queue takes a slot only when the disk can hold its build next to
     # what the running takes will still grow; asked at most every 5 s while first (it reads df and the small files
     # of the trackers, no du), so a take that ends frees its reservation for the next one within seconds
@@ -235,15 +236,34 @@ heavy_slot_acquire() {
       my $secs = 0; $secs = $secs * 60 + $_ for split /:/, $et;
       return time - ($secs + $days * 86400) <= $stamp + 2;
     };
+    # one work take at a time on the heavy slots: true while a held slot (its lock held by its keeper, its info
+    # naming class `work`) is a work take; only a work waiter asks. The lock, not the pid: a killed holder that its
+    # parent has not reaped still answers kill 0, while its keeper (and the lock) is gone within a second
+    my @fh;  # (the lock file of each slot, opened below; declared here for $work_busy)
+    # (only while a slot is free: with every slot held the waiter waits as before, and marks nothing)
+    my $work_busy = sub {
+      return 0 unless defined $pool && $pool eq "heavy" && $orig eq "work";
+      my ($free, $work) = (0, 0);
+      for my $k (0 .. $n - 1) {
+        if (flock($fh[$k], LOCK_EX | LOCK_NB)) { flock($fh[$k], LOCK_UN); $free = 1; next }  # (nobody holds slot k)
+        # (a held slot whose info is not written yet, or names a holder that is gone, counts as work: two work
+        # takes asking at once would otherwise both take a slot before either wrote its info)
+        my @l;
+        if (open(my $i, "<", "$dir/$infop$k")) { @l = <$i>; close $i; chomp @l }
+        $work = 1 if @l < 5 || $l[0] !~ /^\d+$/ || !kill(0, $l[0]) || $l[4] eq "work";
+      }
+      return $free && $work;
+    };
+    my $wmark = sub { "$q/.work-$me" };
+    my ($wb, $wlast) = (0, 0);
     my $clear = sub { unlink $mark->() };
-    END { unlink $ticket if defined $ticket; unlink "$q/.disk-$me" if defined $me }
-    my @fh;
+    END { unlink $ticket if defined $ticket; if (defined $me) { unlink "$q/.disk-$me"; unlink "$q/.work-$me" } }
     for my $k (0 .. $n - 1) { open($fh[$k], ">>", "$dir/$lock$k") or do { print "error $!\n"; exit 2 } }
     print "pid $$\n";
     my $start = time; my $note = 0; my $best; my $moved = time;
     while (1) {
       my $want = $name->();
-      if ($want ne $me && rename($ticket, "$q/$want")) { $clear->(); $me = $want; $ticket = "$q/$me" }
+      if ($want ne $me && rename($ticket, "$q/$want")) { $clear->(); unlink $wmark->(); $me = $want; $ticket = "$q/$me" }
       opendir(my $dh, $q) or do { print "error $!\n"; exit 2 };
       my @live;
       my @names = readdir $dh;
@@ -254,16 +274,19 @@ heavy_slot_acquire() {
       # a `.disk-<ticket>` marker whose ticket is gone (its keeper was killed before its END ran) goes with it: it
       # held nothing, but read as a waiter (2026-11-16: one from 11-15 02:26 shown as a 26 h wait)
       my %held = map { $_ => 1 } @live, $me;
-      for my $mk (grep { /^\.disk-/ } @names) {
-        my ($t) = $mk =~ /^\.disk-(.+?)(?:\.tmp)?$/;
+      for my $mk (grep { /^\.(?:disk|work)-/ } @names) {
+        my ($t) = $mk =~ /^\.(?:disk|work)-(.+?)(?:\.tmp)?$/;
         unlink "$q/$mk" if defined $t && !$held{$t};
       }
       closedir $dh;
       my ($place) = grep { $live[$_] eq $me } 0 .. $#live;
       # may ask for a slot: the head, or a waiter every one before which is held by the disk (a marker fresher than
       # 15 s; a copy of this block from before the markers writes none, so nobody passes it)
-      my $eligible = defined $place && ($place == 0 || ($dscript ne "" && !grep {
-        my $m = (stat("$q/.disk-$live[$_]"))[9]; !defined $m || time - $m > 15 } 0 .. $place - 1));
+      # (or, for a land waiter only, held by the one-work rule: a `.work-<ticket>` marker fresher than 15 s; work
+      # waiters keep their order among themselves)
+      my $eligible = defined $place && ($place == 0 || !grep {
+        my $md = (stat("$q/.disk-$live[$_]"))[9]; my $mw = (stat("$q/.work-$live[$_]"))[9];
+        !(($dscript ne "" && defined $md && time - $md <= 15) || ($orig ne "work" && defined $mw && time - $mw <= 15)) } 0 .. $place - 1);
       if (!$eligible && !$dok) { ($dok, $dlast) = (1, 0); $clear->() }  # (passed by: asks again when it may)
       if ($eligible && defined $dscript && $dscript ne "" && time - $dlast >= 5) {
         $dwhy = `python3 "$dscript" admit "$dir" "$dkey" 2>&1`; $dok = ($? == 0); $dlast = time; chomp $dwhy;
@@ -271,6 +294,13 @@ heavy_slot_acquire() {
         $moved = time if !$dok;  # (waiting for disk is not a stalled queue: the head does not give up for it)
       }
       if ($eligible && $dok) {
+        $wb = $work_busy->();
+        if (!$wb) { unlink $wmark->() }
+        elsif (time - $wlast >= 5 && open(my $wf, ">", $wmark->() . ".tmp")) {
+          print $wf "one work take at a time\n"; close $wf; rename $wmark->() . ".tmp", $wmark->(); $wlast = time;
+        }
+      } else { $wb = 0; unlink $wmark->() }
+      if ($eligible && $dok && !$wb) {
         for my $k (0 .. $n - 1) {
           next unless flock($fh[$k], LOCK_EX | LOCK_NB);
           $clear->(); unlink $ticket; undef $ticket; unlink $res if $res ne "";
@@ -286,18 +316,20 @@ heavy_slot_acquire() {
       if ($w >= $limit) { unlink $res if $res ne ""; $clear->(); print "timeout\n"; exit 1 }
       if (time - $moved >= $stall) { unlink $res if $res ne ""; $clear->(); print "stalled\n"; exit 1 }
       if ($res ne "" && time - $touched >= 30) { utime(undef, undef, $res); $touched = time }
-      if ($w >= $note) { printf "wait %d %d %s%s\n", ($place // 0) + 1, $w, $class, $dok ? "" : " disk"; $note += 60 }
+      if ($w >= $note) { printf "wait %d %d %s%s%s\n", ($place // 0) + 1, $w, $class, $dok ? "" : " disk", $wb ? " worklimit" : ""; $note += 60 }
       sleep 0.2;
       exit 3 if getppid() != $parent;
     }
-  ' "$d" "$n" "$limit" "$stall" "$class" "$age" "$queue" "$lock" "$title" "$label" "$rkey" "$hold" "$dscript" "$dkey")
+  ' "$d" "$n" "$limit" "$stall" "$class" "$age" "$queue" "$lock" "$title" "$label" "$rkey" "$hold" "$dscript" "$dkey" "$pool" "$info")
   while IFS= read -r line <&8; do
     case "$line" in
       "pid "*) HEAVY_SLOT_KEEPER=${line#pid } ;;
       "wait "*)
         set -- $line
         case "$2" in 1) k=1st ;; 2) k=2nd ;; 3) k=3rd ;; *) k="$2th" ;; esac
-        if [ "${6:-${5:-}}" = disk ]; then
+        if [ "${@: -1}" = worklimit ]; then
+          echo "heavy slot: $k in the queue, waiting ($3 s): one work take at a time, held by $(heavy_slot_holders "$d")" >&2
+        elif [ "${6:-${5:-}}" = disk ]; then
           echo "heavy slot: $k in the queue, waiting for disk space ($3 s): $(python3 "$dscript" admit "$d" "$dkey" 2>&1)" >&2
         else
           echo "heavy slot: waiting ($k in the queue, $3 s) for $(heavy_slot_holders "$d"); ${pool} slot, as $4${5:+ $5}" >&2
@@ -926,7 +958,7 @@ step "ci.yml / test: Service certificate and delegated revocation tests"
 step "ci.yml / test: Enrollment tests"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --test enrollment --test invite )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --test enrollment --test invite )
 )
 
 step "ci.yml / release: Test (release)"
@@ -950,7 +982,7 @@ step "ci.yml / release: Service certificate and delegated revocation tests (rele
 step "ci.yml / release: Enrollment tests (release)"
 (
   gh_step ci.yml.release
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --release --test enrollment --test invite )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --release --test enrollment --test invite )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"

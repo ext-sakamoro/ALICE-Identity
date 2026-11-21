@@ -13,13 +13,16 @@
 //!    whose signature does not verify under that key is refused when decoded. The Noise static key is an
 //!    X25519 key and cannot sign: the request binds it under the device key's signature, and its possession is
 //!    shown at the first Noise handshake with it.
-//! 3. **Grant**: the master's [`EnrollmentDesk`] checks the request against the ticket and issues an ordinary
+//! 3. **Grant**: the person types the code the new install shows; [`EnrollmentDesk::confirm`] compares it with
+//!    the request's [`EnrollmentRequest::short_code`] and returns a [`ConfirmedRequest`], the only input of
+//!    [`EnrollmentDesk::approve`]. The desk then checks the request against the ticket and issues an ordinary
 //!    [`DeviceCert`] for the device key and Noise key. The new install accepts it with
 //!    [`EnrollmentRequest::accept_grant`]: it must come from the ticket's master and name this request's
 //!    subject and keys.
 //!
-//! Before approving, the person compares [`EnrollmentRequest::short_code`] on the two screens, so a request
-//! swapped on its way to the master shows a different code.
+//! The code is compared before any grant is issued, and the API admits no other order: a request swapped on its
+//! way to the master has a different code, so its confirm fails and nothing is issued.
+//! [`ENROLLMENT_CODE_MAX_MISMATCHES`] wrong codes cancel the ticket, so the code cannot be guessed by trying.
 //!
 //! ```text
 //! ticket:  signed = ENROLLMENT_TICKET_CONTEXT || body
@@ -79,6 +82,10 @@ pub const ENROLLMENT_REQUEST_TEXT_PREFIX: &str = "ALICE-ENROLL-REQ:1:";
 /// The longest window a ticket may have (15 minutes): it is shown and used while both devices are at hand
 pub const ENROLLMENT_TICKET_MAX_LIFETIME_SECS: u64 = 900;
 
+/// How many wrong codes a ticket takes: at the last one the desk cancels the ticket, so the code (50 bits)
+/// cannot be guessed by trying ([`EnrollmentDesk::confirm`])
+pub const ENROLLMENT_CODE_MAX_MISMATCHES: u8 = 3;
+
 /// Why a ticket or a request was not made, decoded or accepted, or a grant not issued or accepted
 ///
 /// Made by this crate and read by callers; callers never build one.
@@ -121,6 +128,9 @@ pub enum EnrollmentError {
     Cert(DeviceCertError),
     /// The grant names another subject, device key or Noise key than the request (the part is named)
     GrantMismatch(&'static str),
+    /// The code typed at the master is not the request's short code; `remaining` more wrong codes cancel
+    /// the ticket (0: it is cancelled now)
+    CodeMismatch { remaining: u8 },
 }
 
 impl fmt::Display for EnrollmentError {
@@ -159,6 +169,13 @@ impl fmt::Display for EnrollmentError {
             Self::GrantMismatch(what) => {
                 write!(f, "the grant names another {what} than the request")
             }
+            Self::CodeMismatch { remaining: 0 } => f.write_str(
+                "the code is not the request's code, and the ticket is cancelled after too many wrong codes",
+            ),
+            Self::CodeMismatch { remaining } => write!(
+                f,
+                "the code is not the request's code ({remaining} more wrong code(s) cancel the ticket)"
+            ),
         }
     }
 }
@@ -574,6 +591,53 @@ impl EnrollmentRequest {
 pub struct EnrollmentDesk {
     master_public: [u8; 32],
     spent: SpentIds,
+    mismatches: std::collections::BTreeMap<[u8; 16], u8>,
+}
+
+/// A request whose short code the desk compared with the code the person typed ([`EnrollmentDesk::confirm`])
+///
+/// It holds that ticket and that request, and it is the only input
+/// [`EnrollmentDesk::approve`] takes, so no grant is issued for a request whose code was not compared, nor
+/// for a request other than the one compared. It has no public constructor:
+///
+/// ```compile_fail
+/// use alice_identity::enrollment::{ConfirmedRequest, EnrollmentRequest, EnrollmentTicket};
+/// fn forge(ticket: EnrollmentTicket, request: EnrollmentRequest) -> ConfirmedRequest {
+///     ConfirmedRequest { ticket, request }
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfirmedRequest {
+    ticket: EnrollmentTicket,
+    request: EnrollmentRequest,
+}
+
+impl ConfirmedRequest {
+    /// The ticket the request was confirmed for
+    #[must_use]
+    pub const fn ticket(&self) -> &EnrollmentTicket {
+        &self.ticket
+    }
+
+    /// The request whose code was compared
+    #[must_use]
+    pub const fn request(&self) -> &EnrollmentRequest {
+        &self.request
+    }
+}
+
+/// A typed code in the short code's form: dashes and white space dropped, upper case, and the Crockford
+/// aliases read as their digits (O as 0, I and L as 1)
+fn normalised_code(typed: &str) -> Vec<u8> {
+    typed
+        .bytes()
+        .filter(|b| *b != b'-' && !b.is_ascii_whitespace())
+        .map(|b| match b.to_ascii_uppercase() {
+            b'O' => b'0',
+            b'I' | b'L' => b'1',
+            c => c,
+        })
+        .collect()
 }
 
 impl EnrollmentDesk {
@@ -583,11 +647,67 @@ impl EnrollmentDesk {
         Self {
             master_public: master.0,
             spent: SpentIds::default(),
+            mismatches: std::collections::BTreeMap::new(),
         }
     }
 
-    /// Approve `request` for `ticket` at `now`: issue a device certificate holding from `now` until before
-    /// `not_after` and record the ticket as used. A refused request records nothing.
+    /// Compare the code the person typed (read from the new install's screen) with `request`'s short code,
+    /// in constant time after reading case, dashes, white space and the Crockford aliases (O as 0, I and L as 1) out of it: the step before [`EnrollmentDesk::approve`], which takes
+    /// only the [`ConfirmedRequest`] this returns. A wrong code is counted against the ticket; at
+    /// [`ENROLLMENT_CODE_MAX_MISMATCHES`] the ticket is cancelled, and every later confirm or approval of it
+    /// is refused, the right code too.
+    ///
+    /// # Errors
+    /// [`EnrollmentError::AlreadyUsed`] or [`EnrollmentError::Cancelled`] for a ticket this desk used or
+    /// cancelled, then [`EnrollmentError::CodeMismatch`]
+    pub fn confirm(
+        &mut self,
+        ticket: &EnrollmentTicket,
+        request: &EnrollmentRequest,
+        typed_code: &str,
+    ) -> Result<ConfirmedRequest, EnrollmentError> {
+        match self.spent.get(&ticket.ticket_id) {
+            Some(Spent::Redeemed { .. }) => return Err(EnrollmentError::AlreadyUsed),
+            Some(Spent::Cancelled) => return Err(EnrollmentError::Cancelled),
+            None => {}
+        }
+        let want = normalised_code(&request.short_code());
+        if alice_sign::ct_eq(&normalised_code(typed_code), &want) {
+            return Ok(ConfirmedRequest {
+                ticket: ticket.clone(),
+                request: request.clone(),
+            });
+        }
+        let count = self.mismatches.entry(ticket.ticket_id).or_insert(0);
+        *count = count.saturating_add(1);
+        let remaining = ENROLLMENT_CODE_MAX_MISMATCHES.saturating_sub(*count);
+        if remaining == 0 {
+            self.spent.cancel(ticket.ticket_id);
+        }
+        Err(EnrollmentError::CodeMismatch { remaining })
+    }
+
+    /// The wrong codes recorded against `ticket_id` (a caller that keeps the desk's state across runs reads
+    /// this after a mismatch and gives it back with [`EnrollmentDesk::restore_mismatches`])
+    #[must_use]
+    pub fn mismatches(&self, ticket_id: &[u8; 16]) -> u8 {
+        self.mismatches.get(ticket_id).copied().unwrap_or(0)
+    }
+
+    /// Restore `count` wrong codes recorded against `ticket_id` by an earlier run; at
+    /// [`ENROLLMENT_CODE_MAX_MISMATCHES`] or more the ticket is cancelled
+    pub fn restore_mismatches(&mut self, ticket_id: [u8; 16], count: u8) {
+        if count >= ENROLLMENT_CODE_MAX_MISMATCHES {
+            self.spent.cancel(ticket_id);
+        }
+        if count > 0 {
+            self.mismatches.insert(ticket_id, count);
+        }
+    }
+
+    /// Approve a request whose code was compared ([`EnrollmentDesk::confirm`]) for the ticket it was
+    /// confirmed for, at `now`: issue a device certificate holding from `now` until before `not_after` and
+    /// record the ticket as used. A refused request records nothing.
     ///
     /// # Errors
     /// In this order: [`EnrollmentError::WrongMaster`] (the key or the ticket is not this desk's master's),
@@ -597,11 +717,11 @@ impl EnrollmentDesk {
     pub fn approve(
         &mut self,
         master: &KeyPair,
-        ticket: &EnrollmentTicket,
-        request: &EnrollmentRequest,
+        confirmed: &ConfirmedRequest,
         now: u64,
         not_after: u64,
     ) -> Result<DeviceCert, EnrollmentError> {
+        let (ticket, request) = (&confirmed.ticket, &confirmed.request);
         if master.public().0 != self.master_public || ticket.master_public != self.master_public {
             return Err(EnrollmentError::WrongMaster);
         }

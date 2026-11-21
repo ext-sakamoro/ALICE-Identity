@@ -58,7 +58,7 @@ jobs:
         run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
       # device enrollment (ticket, request signed by the device key, the desk's grant): every oracle must run
       - name: Enrollment tests
-        run: scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --test enrollment --test invite
+        run: scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --test enrollment --test invite
 
   release:
     # ALICE-Law G4 / G5: the test suite under the release profile on x86_64 (ubuntu) and
@@ -83,7 +83,7 @@ jobs:
       - name: Service certificate and delegated revocation tests (release)
         run: scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation
       - name: Enrollment tests (release)
-        run: scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --release --test enrollment --test invite
+        run: scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --release --test enrollment --test invite
 
   float-environment:
     # ALICE-Law G14 on each OS: round-to-nearest-even and no flush-to-zero at run time in
