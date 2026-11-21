@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev 22eeb4ae73784d711cc6d977ce4e930ee9914972
+# generator rev 37b834045d17a627624b94d26a852520f66fe725
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -31,6 +31,26 @@ cd "$(dirname "$0")/.."
 # release removes it only while it names the releasing shell. A wait whose place has not moved for ALICE_HEAVY_SLOT_STALL_SECS (default 10800) or past ALICE_HEAVY_SLOT_TIMEOUT in all (default 28800) fails; the holder's own nested runs
 # (ALICE_HEAVY_SLOT_HELD) run inside its slot.
 heavy_slot_dir() { printf '%s\n' "${ALICE_HEAVY_SLOT_DIR:-$HOME/.cache/alice-heavy-slot}"; }
+# Disk admission (disk_reserve.py) is on for every heavy and short take; no environment name turns it off. A test
+# turns it off for its own slot dir only, with a file `disk-admission-off` in that dir. A slot dir under the account's
+# home (from the password database, whatever HOME says) refuses the file: the machine's queue (.cache/alice-heavy-slot
+# there) and the Air's receipt queue (remote-receipts/slot there) always admit by disk; a test's dir is a temporary dir.
+# Prints nothing but a refusal; returns 0 = admission on, 1 = off (a test's dir), 2 = refused.
+heavy_slot_disk_admits() {
+  local d="$1" home
+  [ -e "$d/disk-admission-off" ] || return 0
+  home=$(perl -e 'print((getpwuid($<))[7])')
+  local real
+  real=$(cd "$d" 2>/dev/null && pwd -P) || real=$d
+  home=$(cd "$home" 2>/dev/null && pwd -P) || home=""
+  case "$real/" in
+    "$home"/*)
+      echo "heavy slot: $d/disk-admission-off is refused in a slot dir under the account's home (remove it; disk admission stays on)" >&2
+      return 2 ;;
+  esac
+  [ -n "$home" ] || { echo "heavy slot: the account's home is unknown; $d/disk-admission-off is refused" >&2; return 2; }
+  return 1
+}
 heavy_slot_count() {
   case "${ALICE_HEAVY_SLOTS:-2}" in
     [1-9] | 1[0-6]) printf '%s\n' "${ALICE_HEAVY_SLOTS:-2}" ;;
@@ -126,9 +146,13 @@ heavy_slot_acquire() {
     # one short slot, its own queue; a nested take (the preflight inside) adopts it through ALICE_HEAVY_SLOT_HELD above
     n=1 queue=queue-short lock=short. info=info.short.
   fi
-  # disk reservations (disk_reserve.py): heavy and short takes, unless ALICE_HEAVY_SLOT_DISK=0
-  local dscript="" dkey="${HEAVY_SLOT_DISK_KEY:-$label}"
-  if [ "$pool" != light ] && [ "${ALICE_HEAVY_SLOT_DISK:-1}" != 0 ]; then
+  # disk reservations (disk_reserve.py): heavy and short takes, unless a test's slot dir turns them off
+  local dscript="" dkey="${HEAVY_SLOT_DISK_KEY:-$label}" dadm=0
+  if [ "$pool" != light ]; then
+    heavy_slot_disk_admits "$d" || dadm=$?
+    [ "$dadm" = 2 ] && return 2
+  fi
+  if [ "$pool" != light ] && [ "$dadm" = 0 ]; then
     dscript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/disk_reserve.py"
     [ -f "$dscript" ] || dscript=""
   fi
@@ -197,6 +221,20 @@ heavy_slot_acquire() {
     # admission passes (2026-11-10: a head reserving 30.8 GiB of 25.5 free held 5 fitting waiters for 3 h); the head
     # keeps its place: it clears its marker as soon as the disk fits, and then nobody behind it may pass
     my $mark = sub { "$q/.disk-$me" };
+    # the keeper of a ticket: its pid alive and that process started no later than the ticket file was written (+2 s:
+    # ps gives whole seconds; the keeper writes its ticket once, after it starts, and a rename keeps the time); a later
+    # process that took the pid of a dead keeper is not it. Not the time in the name: a restarted waiter writes its old
+    # time into a new ticket. A ticket gone meanwhile, or a start ps cannot give, falls back to the pid alone
+    my $keeper = sub {
+      my ($p, $t) = @_;
+      my $stamp = (stat("$q/$t"))[9];
+      return 1 unless defined $stamp;
+      my $et = `ps -o etime= -p $p 2>/dev/null`; $et =~ s/\s+//g;
+      return 1 if $et eq "";
+      my $days = ($et =~ s/^(\d+)-//) ? $1 : 0;
+      my $secs = 0; $secs = $secs * 60 + $_ for split /:/, $et;
+      return time - ($secs + $days * 86400) <= $stamp + 2;
+    };
     my $clear = sub { unlink $mark->() };
     END { unlink $ticket if defined $ticket; unlink "$q/.disk-$me" if defined $me }
     my @fh;
@@ -208,9 +246,17 @@ heavy_slot_acquire() {
       if ($want ne $me && rename($ticket, "$q/$want")) { $clear->(); $me = $want; $ticket = "$q/$me" }
       opendir(my $dh, $q) or do { print "error $!\n"; exit 2 };
       my @live;
-      for my $t (sort grep { /^\d/ } readdir $dh) {
+      my @names = readdir $dh;
+      for my $t (sort grep { /^\d/ } @names) {
         my ($p) = $t =~ /-(\d+)$/;
-        if ($p && ($p == $$ || kill(0, $p))) { push @live, $t } else { unlink "$q/$t" }
+        if ($p && ($p == $$ || (kill(0, $p) && $keeper->($p, $t)))) { push @live, $t } else { unlink "$q/$t" }
+      }
+      # a `.disk-<ticket>` marker whose ticket is gone (its keeper was killed before its END ran) goes with it: it
+      # held nothing, but read as a waiter (2026-11-16: one from 11-15 02:26 shown as a 26 h wait)
+      my %held = map { $_ => 1 } @live, $me;
+      for my $mk (grep { /^\.disk-/ } @names) {
+        my ($t) = $mk =~ /^\.disk-(.+?)(?:\.tmp)?$/;
+        unlink "$q/$mk" if defined $t && !$held{$t};
       }
       closedir $dh;
       my ($place) = grep { $live[$_] eq $me } 0 .. $#live;
@@ -862,7 +908,7 @@ step "ci.yml / test: Test"
 step "ci.yml / test: Law tests (semantics goldens and identifier, hash order)"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh semantics_golden=12,identity_semantics_id=7,unspecified_order=3 -- cargo test --test semantics_golden --test identity_semantics_id --test unspecified_order )
 )
 
 step "ci.yml / test: Recovery tests (feature recovery)"
@@ -877,6 +923,12 @@ step "ci.yml / test: Service certificate and delegated revocation tests"
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
 )
 
+step "ci.yml / test: Enrollment tests"
+(
+  gh_step ci.yml.test
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --test enrollment --test invite )
+)
+
 step "ci.yml / release: Test (release)"
 (
   gh_step ci.yml.release
@@ -886,13 +938,19 @@ step "ci.yml / release: Test (release)"
 step "ci.yml / release: Law tests (release)"
 (
   gh_step ci.yml.release
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh semantics_golden=10,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh semantics_golden=12,identity_semantics_id=7,unspecified_order=3 -- cargo test --release --test semantics_golden --test identity_semantics_id --test unspecified_order )
 )
 
 step "ci.yml / release: Service certificate and delegated revocation tests (release)"
 (
   gh_step ci.yml.release
 ( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh service_cert=19,service_subject_separation=11,service_artifact=10,delegated_revocation=25 -- cargo test --release --test service_cert --test service_subject_separation --test service_artifact --test delegated_revocation )
+)
+
+step "ci.yml / release: Enrollment tests (release)"
+(
+  gh_step ci.yml.release
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=14,invite=11 -- cargo test --release --test enrollment --test invite )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"
