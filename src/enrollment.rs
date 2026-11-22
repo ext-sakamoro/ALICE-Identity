@@ -182,26 +182,39 @@ impl fmt::Display for EnrollmentError {
 
 impl std::error::Error for EnrollmentError {}
 
-/// The subject's text, refusing a subject that does not fit or does not read back as itself
-fn subject_text(subject: &Did) -> Result<String, EnrollmentError> {
-    let text = subject.to_string();
-    if text.len() > MAX_SUBJECT_LEN || Did::parse(&text).as_ref() != Ok(subject) {
-        return Err(EnrollmentError::InvalidSubject);
-    }
-    Ok(text)
+/// A subject whose `did:method:id` text reads back as the same DID and fits the u16 length field: made once,
+/// so encoding it cannot fail
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Subject {
+    did: Did,
+    text: String,
+    len: u16,
 }
 
-fn push_subject(b: &mut Vec<u8>, subject: &str) {
-    b.extend_from_slice(
-        &u16::try_from(subject.len())
-            .expect("checked against MAX_SUBJECT_LEN")
-            .to_be_bytes(),
-    );
-    b.extend_from_slice(subject.as_bytes());
+impl Subject {
+    /// The subject, refusing one that does not fit or does not read back as itself
+    fn new(did: &Did) -> Result<Self, EnrollmentError> {
+        let text = did.to_string();
+        if text.len() > MAX_SUBJECT_LEN || Did::parse(&text).as_ref() != Ok(did) {
+            return Err(EnrollmentError::InvalidSubject);
+        }
+        let len = u16::try_from(text.len()).map_err(|_| EnrollmentError::InvalidSubject)?;
+        Ok(Self {
+            did: did.clone(),
+            text,
+            len,
+        })
+    }
+
+    /// Length (u16 BE) and text
+    fn push(&self, b: &mut Vec<u8>) {
+        b.extend_from_slice(&self.len.to_be_bytes());
+        b.extend_from_slice(self.text.as_bytes());
+    }
 }
 
 /// Version and subject, and the rest after the subject, which must be `tail` bytes long
-fn split_head(bytes: &[u8], tail: usize) -> Result<(Did, &[u8]), EnrollmentError> {
+fn split_head(bytes: &[u8], tail: usize) -> Result<(Subject, &[u8]), EnrollmentError> {
     let (&version, rest) = bytes
         .split_first()
         .ok_or(EnrollmentError::Malformed("version"))?;
@@ -221,15 +234,19 @@ fn split_head(bytes: &[u8], tail: usize) -> Result<(Did, &[u8]), EnrollmentError
     }
     let text = std::str::from_utf8(subject).map_err(|_| EnrollmentError::InvalidSubject)?;
     let subject = Did::parse(text).map_err(|_| EnrollmentError::InvalidSubject)?;
-    Ok((subject, rest))
+    Ok((Subject::new(&subject)?, rest))
 }
 
-fn array<const N: usize>(bytes: &[u8], at: usize) -> [u8; N] {
-    bytes[at..at + N].try_into().expect("length checked")
+/// The `N` bytes at `at`, or [`EnrollmentError::Malformed`] when they are not all there
+fn array<const N: usize>(bytes: &[u8], at: usize) -> Result<[u8; N], EnrollmentError> {
+    at.checked_add(N)
+        .and_then(|end| bytes.get(at..end))
+        .and_then(|field| field.try_into().ok())
+        .ok_or(EnrollmentError::Malformed("field"))
 }
 
-fn u64_at(bytes: &[u8], at: usize) -> u64 {
-    u64::from_be_bytes(array(bytes, at))
+fn u64_at(bytes: &[u8], at: usize) -> Result<u64, EnrollmentError> {
+    array(bytes, at).map(u64::from_be_bytes)
 }
 
 fn decode_text(text: &str, prefix: &str) -> Result<Vec<u8>, EnrollmentError> {
@@ -243,7 +260,7 @@ fn decode_text(text: &str, prefix: &str) -> Result<Vec<u8>, EnrollmentError> {
 /// A single-use ticket the master signs for one new install (see the module documentation)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnrollmentTicket {
-    subject: Did,
+    subject: Subject,
     master_public: [u8; 32],
     ticket_id: [u8; 16],
     issued_at: u64,
@@ -273,9 +290,9 @@ impl EnrollmentTicket {
         if not_after - issued_at > ENROLLMENT_TICKET_MAX_LIFETIME_SECS {
             return Err(EnrollmentError::LifetimeTooLong);
         }
-        subject_text(subject)?;
+        let subject = Subject::new(subject)?;
         let mut ticket = Self {
-            subject: subject.clone(),
+            subject,
             master_public: master.public().0,
             ticket_id,
             issued_at,
@@ -295,10 +312,9 @@ impl EnrollmentTicket {
     }
 
     fn body(&self) -> Vec<u8> {
-        let subject = self.subject.to_string();
-        let mut b = Vec::with_capacity(1 + 2 + subject.len() + 32 + 16 + 16);
+        let mut b = Vec::with_capacity(1 + 2 + self.subject.text.len() + 32 + 16 + 16);
         b.push(ENROLLMENT_VERSION);
-        push_subject(&mut b, &subject);
+        self.subject.push(&mut b);
         b.extend_from_slice(&self.master_public);
         b.extend_from_slice(&self.ticket_id);
         b.extend_from_slice(&self.issued_at.to_be_bytes());
@@ -323,11 +339,11 @@ impl EnrollmentTicket {
         let (subject, rest) = split_head(bytes, 32 + 16 + 8 + 8 + 64)?;
         let ticket = Self {
             subject,
-            master_public: array(rest, 0),
-            ticket_id: array(rest, 32),
-            issued_at: u64_at(rest, 48),
-            not_after: u64_at(rest, 56),
-            signature: array(rest, 64),
+            master_public: array(rest, 0)?,
+            ticket_id: array(rest, 32)?,
+            issued_at: u64_at(rest, 48)?,
+            not_after: u64_at(rest, 56)?,
+            signature: array(rest, 64)?,
         };
         if ticket.to_bytes() != bytes {
             return Err(EnrollmentError::Malformed("not the canonical encoding"));
@@ -343,7 +359,7 @@ impl EnrollmentTicket {
         {
             return Err(EnrollmentError::BadSignature);
         }
-        if is_service_subject(&ticket.subject) {
+        if is_service_subject(&ticket.subject.did) {
             return Err(EnrollmentError::ReservedSubject);
         }
         Ok(ticket)
@@ -388,7 +404,7 @@ impl EnrollmentTicket {
 
     #[must_use]
     pub const fn subject(&self) -> &Did {
-        &self.subject
+        &self.subject.did
     }
 
     #[must_use]
@@ -416,7 +432,7 @@ impl EnrollmentTicket {
 /// documentation)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnrollmentRequest {
-    subject: Did,
+    subject: Subject,
     master_public: [u8; 32],
     ticket_id: [u8; 16],
     device_public: [u8; 32],
@@ -456,10 +472,9 @@ impl EnrollmentRequest {
     }
 
     fn body(&self) -> Vec<u8> {
-        let subject = self.subject.to_string();
-        let mut b = Vec::with_capacity(1 + 2 + subject.len() + 32 + 16 + 32 + 32 + 8);
+        let mut b = Vec::with_capacity(1 + 2 + self.subject.text.len() + 32 + 16 + 32 + 32 + 8);
         b.push(ENROLLMENT_VERSION);
-        push_subject(&mut b, &subject);
+        self.subject.push(&mut b);
         b.extend_from_slice(&self.master_public);
         b.extend_from_slice(&self.ticket_id);
         b.extend_from_slice(&self.device_public);
@@ -485,12 +500,12 @@ impl EnrollmentRequest {
         let (subject, rest) = split_head(bytes, 32 + 16 + 32 + 32 + 8 + 64)?;
         let request = Self {
             subject,
-            master_public: array(rest, 0),
-            ticket_id: array(rest, 32),
-            device_public: array(rest, 48),
-            noise_static: array(rest, 80),
-            requested_at: u64_at(rest, 112),
-            signature: array(rest, 120),
+            master_public: array(rest, 0)?,
+            ticket_id: array(rest, 32)?,
+            device_public: array(rest, 48)?,
+            noise_static: array(rest, 80)?,
+            requested_at: u64_at(rest, 112)?,
+            signature: array(rest, 120)?,
         };
         if request.to_bytes() != bytes {
             return Err(EnrollmentError::Malformed("not the canonical encoding"));
@@ -543,7 +558,7 @@ impl EnrollmentRequest {
         grant
             .verify(&PublicKey(self.master_public), now)
             .map_err(EnrollmentError::Cert)?;
-        if grant.subject() != &self.subject {
+        if grant.subject() != &self.subject.did {
             return Err(EnrollmentError::GrantMismatch("subject"));
         }
         if grant.device_public() != &self.device_public {
@@ -557,7 +572,7 @@ impl EnrollmentRequest {
 
     #[must_use]
     pub const fn subject(&self) -> &Did {
-        &self.subject
+        &self.subject.did
     }
 
     #[must_use]
@@ -744,7 +759,7 @@ impl EnrollmentDesk {
         }
         let cert = DeviceCert::issue(
             master,
-            &request.subject,
+            &request.subject.did,
             request.device_public,
             request.noise_static,
             now,

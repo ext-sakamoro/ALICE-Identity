@@ -55,6 +55,7 @@
 - `base58` module (`encode` / `decode`、base58btc)
 
 ### Changed
+- `enrollment`: 券と要求の符号化と読み出しで panic しない subject は作る時に長さの欄 (u16) に収まることを確かめた型で持ち、固定長の欄は無ければ `EnrollmentError::Malformed("field")` を返す (本番 code の `expect` を 2 つ減らす、no-panic の数は 28 に戻る)
 - `DelegatedRevocations` の保存: 証明書と一覧の長さの欄 (u16 / u32) に収まるかを `accept` と `from_bytes` / `restore` で確かめ、収まらない時は `Malformed("certificate length")` / `Malformed("list length")` で拒む (保持中は変わらない) `to_bytes` は確かめた長さと符号化を写すだけで、panic する箇所を持たない 読み込みの固定長の欄は短い時に `Malformed` を返す 試験 (鍵の無い digest を付け直して本体を 1 byte ずつ切った全部を拒む) を足した
 - feature `recovery`: `master_recovery` の内部で seed を 32 byte に写した複製を使い終わりに消す (`zeroize`、alice-crypto 経由で既に build に入っている crate) 呼び出し側の seed は既に消える buffer
 - 手元の `scripts/preflight.sh` を生成し直す: SHA で固定した `dtolnay/rust-toolchain` の commit を toolchain と読んで `has_toolchain` で毎回止まっていた (toolchain は `rust-toolchain.toml` に従う)
