@@ -958,7 +958,7 @@ step "ci.yml / test: Service certificate and delegated revocation tests"
 step "ci.yml / test: Enrollment tests"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --test enrollment --test invite )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=20,invite=11 -- cargo test --test enrollment --test invite )
 )
 
 step "ci.yml / release: Test (release)"
@@ -982,7 +982,7 @@ step "ci.yml / release: Service certificate and delegated revocation tests (rele
 step "ci.yml / release: Enrollment tests (release)"
 (
   gh_step ci.yml.release
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=19,invite=11 -- cargo test --release --test enrollment --test invite )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings"; scripts/run_tests.sh enrollment=20,invite=11 -- cargo test --release --test enrollment --test invite )
 )
 
 step "ci.yml / float-environment: Float environment (debug and release)"

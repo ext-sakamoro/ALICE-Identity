@@ -660,3 +660,24 @@ fn the_grant_is_for_the_request_whose_code_was_compared() {
         .unwrap();
     assert_eq!(cert.device_public(), &device().public().0);
 }
+
+#[test]
+fn a_subject_longer_than_the_certificate_limit_is_refused_at_issue() {
+    use alice_identity::device_cert::MAX_SUBJECT_LEN;
+    // `did:alice:` + id: the longest that fits, and one byte over
+    let fits = Did::parse(&format!(
+        "did:alice:{}",
+        "a".repeat(MAX_SUBJECT_LEN - "did:alice:".len())
+    ))
+    .unwrap();
+    assert!(EnrollmentTicket::issue(&master(), &fits, TICKET_ID, ISSUED_AT, NOT_AFTER).is_ok());
+    let over = Did::parse(&format!(
+        "did:alice:{}",
+        "a".repeat(MAX_SUBJECT_LEN + 1 - "did:alice:".len())
+    ))
+    .unwrap();
+    assert_eq!(
+        EnrollmentTicket::issue(&master(), &over, TICKET_ID, ISSUED_AT, NOT_AFTER),
+        Err(EnrollmentError::InvalidSubject)
+    );
+}
