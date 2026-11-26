@@ -4,6 +4,7 @@
 
 ### 破壊的変更
 
+- 版を 4.0.0 にする (`RevocationList::issue` が `Result` を返すため) 利用側は `alice-identity` の要求を "4.0" に上げ、`issue(..)` の結果を受ける (git main から取る crate も同じ、"3.0" のままでは解決しない)
 - 失効の一覧の端末 id に上限 `MAX_REVOKED` (4096): `RevocationList::issue` は `Result` を返し、重複を除いて 4096 を超える一覧を新しい `RevocationListError::TooMany { count, max }` で拒む (何も署名しない) `extend` も同じ `from_bytes` は件数が 4096 を超える一覧を長さの比較より前に同じ error で拒む 一覧の最大の長さは `MAX_REVOCATION_LIST_LEN` (53 + 4096 × 16 + 64 byte) で、読む側はこれで受け取る大きさを決められる 根拠: 1 つの master が同時に持つ端末証明書は最大 16 (`MAX_CARD_CERTS`) で失効は戻らないので、一覧は生涯に退役した端末の数だけ伸びる 4096 は 16 台の入れ替え 256 回分で、`MAX_RECOVERY_SETS` と同じ桁 以前も確保は入力の長さまでに限られていたが、一覧の大きさそのものには上限が無かった 利用側は `issue(..)` の結果を受ける (試験では `.unwrap()`) 試験 `tests/cert_revocation.rs` (上限ちょうど・1 超え・件数の先読み・extend、変異 3 件で red)
 - 端末の登録で、確認の code を比べてからでないと端末証明書を発行できないようにする `EnrollmentDesk::approve` は `EnrollmentRequest` と `EnrollmentTicket` を取らず、`EnrollmentDesk::confirm` (master の画面で打った code を要求の short code と定数時間で比べる) が返す `ConfirmedRequest` だけを取る `ConfirmedRequest` は比べた ticket と要求をそのまま持ち、crate の外では作れない 打った code は大文字小文字・`-`・空白を区別せず、Crockford の読み替え (O を 0、I と L を 1) をする 違う code は ticket ごとに数え、`ENROLLMENT_CODE_MAX_MISMATCHES` (3) 回で ticket を取り消す (その後は正しい code でも `Cancelled`) 状態を実行の間で保つ利用側は `EnrollmentDesk::mismatches` / `restore_mismatches` で数を渡す 新しい variant `EnrollmentError::CodeMismatch { remaining }` 試験 `tests/enrollment.rs` (20、CI の test / release job で件数つき)
 - 版を 3.0.0 にする 利用側は `alice-identity` の要求を "3.0" に上げる (git main から取る crate も同じ、"2.0" のままでは解決しない)
