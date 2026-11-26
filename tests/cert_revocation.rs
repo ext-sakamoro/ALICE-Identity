@@ -2,8 +2,8 @@
 //! the layout in the module documentation and signed with alice-sign over the context.
 
 use alice_identity::cert_revocation::{
-    Accepted, CertRevocations, RevocationList, RevocationListError, REVOCATION_LIST_CONTEXT,
-    REVOCATION_LIST_VERSION,
+    Accepted, CertRevocations, RevocationList, RevocationListError, MAX_REVOCATION_LIST_LEN,
+    MAX_REVOKED, REVOCATION_LIST_CONTEXT, REVOCATION_LIST_VERSION,
 };
 use alice_identity::device_cert::{DeviceCert, DeviceId};
 use alice_identity::did::Did;
@@ -42,7 +42,7 @@ fn signed_bytes(master: &KeyPair, body: &[u8]) -> Vec<u8> {
 #[test]
 fn the_encoding_is_the_documented_layout_with_ids_sorted_and_merged() {
     let m = master();
-    let l = RevocationList::issue(&m, 3, AT, &[id(5), id(2), id(5), id(9)]);
+    let l = RevocationList::issue(&m, 3, AT, &[id(5), id(2), id(5), id(9)]).unwrap();
     let body = expected_body(&m, 3, &[id(2), id(5), id(9)]);
     let mut signed = REVOCATION_LIST_CONTEXT.to_vec();
     signed.extend_from_slice(&body);
@@ -65,7 +65,7 @@ fn the_encoding_is_the_documented_layout_with_ids_sorted_and_merged() {
 #[test]
 fn an_empty_list_is_a_list() {
     let m = master();
-    let l = RevocationList::issue(&m, 0, AT, &[]);
+    let l = RevocationList::issue(&m, 0, AT, &[]).unwrap();
     assert_eq!(l.to_bytes(), signed_bytes(&m, &expected_body(&m, 0, &[])));
     assert_eq!(l.verify(&m.public()), Ok(()));
     assert!(!l.contains(&id(0)));
@@ -74,7 +74,7 @@ fn an_empty_list_is_a_list() {
 #[test]
 fn verify_is_strict_and_checks_the_issuer_and_the_context() {
     let m = master();
-    let l = RevocationList::issue(&m, 1, AT, &[id(1)]);
+    let l = RevocationList::issue(&m, 1, AT, &[id(1)]).unwrap();
     assert_eq!(l.verify(&m.public()), Ok(()));
     assert_eq!(
         l.verify(&KeyPair::from_seed([8; 32]).public()),
@@ -122,7 +122,7 @@ fn a_device_certificate_signature_is_not_a_list_signature() {
         AT + 1,
     )
     .unwrap();
-    let l = RevocationList::issue(&m, 1, AT, &[id(1)]);
+    let l = RevocationList::issue(&m, 1, AT, &[id(1)]).unwrap();
     let mut forged = l.to_bytes();
     let n = forged.len();
     forged[n - 64..].copy_from_slice(c.signature());
@@ -163,7 +163,9 @@ fn a_weak_master_key_is_refused() {
 #[test]
 fn decoding_is_strict() {
     let m = master();
-    let bytes = RevocationList::issue(&m, 1, AT, &[id(1), id(2)]).to_bytes();
+    let bytes = RevocationList::issue(&m, 1, AT, &[id(1), id(2)])
+        .unwrap()
+        .to_bytes();
     for n in 0..bytes.len() {
         assert!(
             RevocationList::from_bytes(&bytes[..n]).is_err(),
@@ -193,12 +195,19 @@ fn decoding_is_strict() {
             "{ids:?}"
         );
     }
-    // a count past the end of the input
+    // a count within the cap but past the end of the input (2 ids held, 3 named)
+    let mut past = bytes.clone();
+    past[1 + 32 + 8 + 8 + 3] = 3;
+    assert_eq!(
+        RevocationList::from_bytes(&past),
+        Err(RevocationListError::Malformed("length for the count"))
+    );
+    // a count over the cap is refused as such, before the length
     let mut big = bytes.clone();
     big[1 + 32 + 8 + 8] = 0xff;
     assert!(matches!(
         RevocationList::from_bytes(&big),
-        Err(RevocationListError::Malformed(_))
+        Err(RevocationListError::TooMany { .. })
     ));
 }
 
@@ -206,8 +215,8 @@ fn decoding_is_strict() {
 fn the_newest_list_wins_whatever_the_arrival_order() {
     let m = master();
     let pk = m.public();
-    let l1 = RevocationList::issue(&m, 1, AT, &[id(1)]);
-    let l2 = RevocationList::issue(&m, 2, AT, &[id(1), id(2)]);
+    let l1 = RevocationList::issue(&m, 1, AT, &[id(1)]).unwrap();
+    let l2 = RevocationList::issue(&m, 2, AT, &[id(1), id(2)]).unwrap();
     let mut a = CertRevocations::new();
     let mut b = CertRevocations::new();
     assert_eq!(a.sequence(&pk), None);
@@ -229,10 +238,10 @@ fn a_different_list_with_the_same_sequence_is_a_conflict_and_the_kept_one_stays(
     let m = master();
     let pk = m.public();
     let mut r = CertRevocations::new();
-    r.accept(RevocationList::issue(&m, 4, AT, &[id(1)]), &pk)
+    r.accept(RevocationList::issue(&m, 4, AT, &[id(1)]).unwrap(), &pk)
         .unwrap();
     assert_eq!(
-        r.accept(RevocationList::issue(&m, 4, AT, &[id(2)]), &pk),
+        r.accept(RevocationList::issue(&m, 4, AT, &[id(2)]).unwrap(), &pk),
         Err(RevocationListError::Conflict { sequence: 4 })
     );
     assert!(r.is_revoked(&pk, &id(1)) && !r.is_revoked(&pk, &id(2)));
@@ -245,7 +254,10 @@ fn an_unverified_list_is_not_kept() {
     let mut r = CertRevocations::new();
     // signed by another key, offered under this master
     assert_eq!(
-        r.accept(RevocationList::issue(&other, 9, AT, &[id(1)]), &m.public()),
+        r.accept(
+            RevocationList::issue(&other, 9, AT, &[id(1)]).unwrap(),
+            &m.public()
+        ),
         Err(RevocationListError::IssuerMismatch)
     );
     assert_eq!(r.sequence(&m.public()), None);
@@ -257,10 +269,16 @@ fn lists_of_different_masters_are_kept_apart() {
     let a = master();
     let b = KeyPair::from_seed([8; 32]);
     let mut r = CertRevocations::new();
-    r.accept(RevocationList::issue(&a, 1, AT, &[id(1)]), &a.public())
-        .unwrap();
-    r.accept(RevocationList::issue(&b, 1, AT, &[id(2)]), &b.public())
-        .unwrap();
+    r.accept(
+        RevocationList::issue(&a, 1, AT, &[id(1)]).unwrap(),
+        &a.public(),
+    )
+    .unwrap();
+    r.accept(
+        RevocationList::issue(&b, 1, AT, &[id(2)]).unwrap(),
+        &b.public(),
+    )
+    .unwrap();
     assert!(r.is_revoked(&a.public(), &id(1)) && !r.is_revoked(&a.public(), &id(2)));
     assert!(r.is_revoked(&b.public(), &id(2)) && !r.is_revoked(&b.public(), &id(1)));
 }
@@ -273,7 +291,7 @@ fn a_certificate_is_revoked_by_its_issuers_list() {
     let mut r = CertRevocations::new();
     assert!(!r.revokes(&c));
     r.accept(
-        RevocationList::issue(&m, 1, AT, &[c.device_id()]),
+        RevocationList::issue(&m, 1, AT, &[c.device_id()]).unwrap(),
         &m.public(),
     )
     .unwrap();
@@ -282,7 +300,7 @@ fn a_certificate_is_revoked_by_its_issuers_list() {
     let other = KeyPair::from_seed([8; 32]);
     let mut r2 = CertRevocations::new();
     r2.accept(
-        RevocationList::issue(&other, 1, AT, &[c.device_id()]),
+        RevocationList::issue(&other, 1, AT, &[c.device_id()]).unwrap(),
         &other.public(),
     )
     .unwrap();
@@ -309,7 +327,7 @@ const GOLDEN: &str = "01ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea69
 
 #[test]
 fn the_fixed_inputs_give_the_recorded_bytes() {
-    let l = RevocationList::issue(&master(), 3, AT, &[id(9), id(2), id(5)]);
+    let l = RevocationList::issue(&master(), 3, AT, &[id(9), id(2), id(5)]).unwrap();
     let hex: String = l.to_bytes().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(hex.len(), 2 * (1 + 32 + 8 + 8 + 4 + 3 * 16 + 64));
     assert_eq!(hex, GOLDEN);
@@ -324,7 +342,10 @@ fn a_newer_list_that_drops_a_revoked_device_is_refused_and_the_kept_one_stays() 
     let pk = m.public();
     let mut r = CertRevocations::new();
     assert_eq!(
-        r.accept(RevocationList::issue(&m, 3, AT, &[id(1), id(2)]), &pk),
+        r.accept(
+            RevocationList::issue(&m, 3, AT, &[id(1), id(2)]).unwrap(),
+            &pk
+        ),
         Ok(Accepted::Replaced)
     );
     let mut compared = 0;
@@ -335,7 +356,7 @@ fn a_newer_list_that_drops_a_revoked_device_is_refused_and_the_kept_one_stays() 
         (u64::MAX, vec![], id(1)),
     ] {
         assert_eq!(
-            r.accept(RevocationList::issue(&m, seq, AT, &ids), &pk),
+            r.accept(RevocationList::issue(&m, seq, AT, &ids).unwrap(), &pk),
             Err(RevocationListError::DropsRevoked { device_id: dropped }),
             "sequence {seq}"
         );
@@ -345,7 +366,7 @@ fn a_newer_list_that_drops_a_revoked_device_is_refused_and_the_kept_one_stays() 
     }
     assert_eq!(
         r.accept(
-            RevocationList::issue(&m, 4, AT, &[id(1), id(2), id(3)]),
+            RevocationList::issue(&m, 4, AT, &[id(1), id(2), id(3)]).unwrap(),
             &pk
         ),
         Ok(Accepted::Replaced)
@@ -353,4 +374,96 @@ fn a_newer_list_that_drops_a_revoked_device_is_refused_and_the_kept_one_stays() 
     assert!(r.is_revoked(&pk, &id(3)));
     compared += 1;
     assert_eq!(compared, 5);
+}
+
+/// `n` distinct ids, ascending (the big-endian index in the last 4 bytes)
+fn ids(n: usize) -> Vec<DeviceId> {
+    (0..n)
+        .map(|i| {
+            let mut raw = [0u8; 16];
+            raw[12..].copy_from_slice(&u32::try_from(i).unwrap().to_be_bytes());
+            DeviceId::from_raw(raw)
+        })
+        .collect()
+}
+
+/// oracle: the constants are the derivation in the doc (4096 ids, head 53 + 16 B per id + 64 B signature)
+#[test]
+fn the_cap_is_4096_ids_and_a_list_of_the_cap_is_its_documented_length() {
+    assert_eq!(MAX_REVOKED, 4096);
+    assert_eq!(MAX_REVOCATION_LIST_LEN, 53 + 4096 * 16 + 64);
+}
+
+/// A list of exactly the cap is issued, encodes to the documented length, and decodes and verifies; one id more is
+/// refused when issuing (counted after merging repeats) and when decoding
+#[test]
+fn a_list_of_the_cap_is_issued_and_read_and_one_id_more_is_refused() {
+    let m = master();
+    let full = ids(MAX_REVOKED);
+    let l = RevocationList::issue(&m, 1, AT, &full).expect("a list of the cap");
+    let bytes = l.to_bytes();
+    assert_eq!(bytes.len(), MAX_REVOCATION_LIST_LEN);
+    let back = RevocationList::from_bytes(&bytes).expect("decode");
+    assert_eq!(back, l);
+    back.verify(&m.public()).expect("verify");
+
+    // repeats are merged before counting: the cap plus a repeat is still the cap
+    let mut repeated = full.clone();
+    repeated.push(full[0]);
+    assert!(RevocationList::issue(&m, 1, AT, &repeated).is_ok());
+
+    let over = ids(MAX_REVOKED + 1);
+    assert_eq!(
+        RevocationList::issue(&m, 1, AT, &over),
+        Err(RevocationListError::TooMany {
+            count: 4097,
+            max: 4096
+        })
+    );
+    // the bytes an issuer without the cap would sign, built from the documented layout
+    let body = expected_body(&m, 1, &over);
+    let over_bytes = signed_bytes(&m, &body);
+    assert_eq!(over_bytes.len(), MAX_REVOCATION_LIST_LEN + 16);
+    assert_eq!(
+        RevocationList::from_bytes(&over_bytes),
+        Err(RevocationListError::TooMany {
+            count: 4097,
+            max: 4096
+        })
+    );
+}
+
+/// A count over the cap is refused from the head alone, before the length is compared: a few bytes naming
+/// `u32::MAX` ids are `TooMany`, not a length error
+#[test]
+fn a_count_over_the_cap_is_refused_before_the_length() {
+    let m = master();
+    let mut head = expected_body(&m, 1, &[]);
+    let n = head.len();
+    head[n - 4..].copy_from_slice(&u32::MAX.to_be_bytes());
+    assert_eq!(
+        RevocationList::from_bytes(&head),
+        Err(RevocationListError::TooMany {
+            count: u64::from(u32::MAX),
+            max: 4096
+        })
+    );
+}
+
+/// Extending a list of the cap with a new id is refused (nothing is signed), with an id it already holds is not
+#[test]
+fn extending_past_the_cap_is_refused() {
+    let m = master();
+    let full = ids(MAX_REVOKED);
+    let l = RevocationList::issue(&m, 1, AT, &full).unwrap();
+    assert_eq!(
+        l.extend(&m, AT, &[id(0xff)]),
+        Err(RevocationListError::TooMany {
+            count: 4097,
+            max: 4096
+        })
+    );
+    let same = l.extend(&m, AT, &[full[7]]).expect("no new id");
+    assert_eq!(same.revoked().len(), MAX_REVOKED);
+    assert_eq!(same.sequence(), 2);
 }

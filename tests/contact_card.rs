@@ -208,7 +208,7 @@ fn a_certificate_of_another_master_is_refused() {
 fn a_revoked_device_is_not_carried() {
     let m = master();
     let cs = certs();
-    let list = RevocationList::issue(&m, 1, ISSUED_AT, &[cs[0].device_id()]);
+    let list = RevocationList::issue(&m, 1, ISSUED_AT, &[cs[0].device_id()]).unwrap();
     assert_eq!(
         ContactCard::issue(&m, &cs, Some(&list), ISSUED_AT),
         Err(ContactCardError::RevokedCert(0))
@@ -226,7 +226,7 @@ fn a_revoked_device_is_not_carried() {
         Err(ContactCardError::RevokedCert(0))
     );
     // the same list without the carried devices is accepted and travels with the card
-    let other = RevocationList::issue(&m, 2, ISSUED_AT, &[]);
+    let other = RevocationList::issue(&m, 2, ISSUED_AT, &[]).unwrap();
     let card = ContactCard::issue(&m, &cs, Some(&other), ISSUED_AT).unwrap();
     let back = ContactCard::from_bytes(&card.to_bytes()).unwrap();
     assert_eq!(back.revocations(), Some(&other));
@@ -237,7 +237,7 @@ fn a_revoked_device_is_not_carried() {
 fn a_revocation_list_of_another_master_is_refused() {
     let m = master();
     let other = KeyPair::from_seed([8; 32]);
-    let list = RevocationList::issue(&other, 1, ISSUED_AT, &[]);
+    let list = RevocationList::issue(&other, 1, ISSUED_AT, &[]).unwrap();
     assert_eq!(
         ContactCard::issue(&m, &certs(), Some(&list), ISSUED_AT),
         Err(ContactCardError::RevocationIssuerMismatch)

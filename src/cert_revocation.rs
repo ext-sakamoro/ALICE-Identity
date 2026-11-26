@@ -28,6 +28,20 @@ pub const REVOCATION_LIST_VERSION: u8 = 1;
 /// Prefixed to the body before signing (domain separation)
 pub const REVOCATION_LIST_CONTEXT: &[u8] = b"alice-identity revocation-list v1";
 
+/// The most device ids one list carries
+///
+/// Derivation: a master has at most [`crate::contact_card::MAX_CARD_CERTS`] (16) live device
+/// certificates at a time, and a revocation is never taken back, so a list grows by the devices
+/// retired over the master's lifetime. 4096 allows 256 complete replacements of a full set of 16
+/// devices, the same order as [`crate::master_recovery::MAX_RECOVERY_SETS`]; the ids then take
+/// 4096 x 16 B = 64 KiB, and a whole list at most [`MAX_REVOCATION_LIST_LEN`] bytes. A reader can
+/// bound what it accepts from that constant; [`RevocationList::issue`] and
+/// [`RevocationList::from_bytes`] refuse a larger list ([`RevocationListError::TooMany`]).
+pub const MAX_REVOKED: usize = 4096;
+
+/// The most bytes one encoded list takes: the head, [`MAX_REVOKED`] ids and the signature
+pub const MAX_REVOCATION_LIST_LEN: usize = HEAD + MAX_REVOKED * ID + SIGNATURE;
+
 /// Bytes before the ids: version, issuer key, sequence, issued_at, count
 const HEAD: usize = 1 + 32 + 8 + 8 + 4;
 const ID: usize = 16;
@@ -61,6 +75,9 @@ pub enum RevocationListError {
     /// A newer list from the same master leaves out a device the kept list revokes (a revocation is never taken
     /// back; the kept list stays)
     DropsRevoked { device_id: DeviceId },
+    /// The list names more than [`MAX_REVOKED`] device ids (`count` after merging repeats when issuing, the
+    /// encoded count when decoding)
+    TooMany { count: u64, max: usize },
 }
 
 impl fmt::Display for RevocationListError {
@@ -80,6 +97,12 @@ impl fmt::Display for RevocationListError {
                 f,
                 "a newer revocation list leaves out the revoked device {device_id}"
             ),
+            Self::TooMany { count, max } => {
+                write!(
+                    f,
+                    "revocation list names {count} device ids, more than {max}"
+                )
+            }
         }
     }
 }
@@ -88,11 +111,26 @@ impl std::error::Error for RevocationListError {}
 
 impl RevocationList {
     /// Sign the list of `revoked` ids (in any order, repeats allowed: they are sorted and merged)
-    #[must_use]
-    pub fn issue(master: &KeyPair, sequence: u64, issued_at: u64, revoked: &[DeviceId]) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`RevocationListError::TooMany`] when more than [`MAX_REVOKED`] distinct ids remain after merging
+    /// repeats (nothing is signed).
+    pub fn issue(
+        master: &KeyPair,
+        sequence: u64,
+        issued_at: u64,
+        revoked: &[DeviceId],
+    ) -> Result<Self, RevocationListError> {
         let mut ids = revoked.to_vec();
         ids.sort_unstable();
         ids.dedup();
+        if ids.len() > MAX_REVOKED {
+            return Err(RevocationListError::TooMany {
+                count: ids.len() as u64,
+                max: MAX_REVOKED,
+            });
+        }
         let mut list = Self {
             version: REVOCATION_LIST_VERSION,
             issuer_public: master.public().0,
@@ -102,13 +140,12 @@ impl RevocationList {
             signature: [0; SIGNATURE],
         };
         list.signature = master.sign(&list.signed_message()).0;
-        list
+        Ok(list)
     }
 
     /// The body: everything the signature covers after the context
     fn body(&self) -> Vec<u8> {
-        // a list is built only by `issue` and `from_bytes`; neither can hold more ids than a
-        // u32 counts (from_bytes reads the count from a u32, issue would need 64 GiB of ids)
+        // a list is built only by `issue` and `from_bytes`, and both refuse more than MAX_REVOKED ids
         let count = u32::try_from(self.revoked.len()).expect("id count fits the u32 field");
         let mut b = Vec::with_capacity(HEAD + ID * self.revoked.len());
         b.extend_from_slice(&[self.version]);
@@ -127,7 +164,8 @@ impl RevocationList {
     /// # Errors
     ///
     /// [`RevocationListError::IssuerMismatch`] when `master` is not this list's issuer, [`RevocationListError::Malformed`]
-    /// when the sequence is already `u64::MAX`.
+    /// when the sequence is already `u64::MAX`, [`RevocationListError::TooMany`] when the merged list would name more
+    /// than [`MAX_REVOKED`] ids.
     pub fn extend(
         &self,
         master: &KeyPair,
@@ -145,7 +183,7 @@ impl RevocationList {
             ))?;
         let mut ids = self.revoked.clone();
         ids.extend_from_slice(more);
-        Ok(Self::issue(master, sequence, issued_at, &ids))
+        Self::issue(master, sequence, issued_at, &ids)
     }
 
     /// The bytes the signature covers: [`REVOCATION_LIST_CONTEXT`] followed by the body
@@ -168,7 +206,8 @@ impl RevocationList {
     ///
     /// # Errors
     /// [`RevocationListError::Malformed`] for a wrong length or ids not strictly ascending,
-    /// [`RevocationListError::UnsupportedVersion`]
+    /// [`RevocationListError::UnsupportedVersion`], [`RevocationListError::TooMany`] for a count over
+    /// [`MAX_REVOKED`] (checked before the length, whatever the input's length)
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, RevocationListError> {
         let (&version, _) = bytes
             .split_first()
@@ -180,6 +219,12 @@ impl RevocationList {
             return Err(RevocationListError::Malformed("header"));
         }
         let count = u32::from_be_bytes(bytes[HEAD - 4..HEAD].try_into().expect("4 bytes"));
+        if usize::try_from(count).map_or(true, |c| c > MAX_REVOKED) {
+            return Err(RevocationListError::TooMany {
+                count: u64::from(count),
+                max: MAX_REVOKED,
+            });
+        }
         let ids_len = usize::try_from(count)
             .ok()
             .and_then(|c| c.checked_mul(ID))

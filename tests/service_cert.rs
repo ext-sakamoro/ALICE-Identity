@@ -395,7 +395,7 @@ fn a_revoked_device_id_is_revoked() {
     let mut revs = CertRevocations::new();
     // a list that revokes another id does not touch this certificate
     revs.accept(
-        RevocationList::issue(&m, 1, ISSUED_AT, &[DeviceId::from_raw([1; 16])]),
+        RevocationList::issue(&m, 1, ISSUED_AT, &[DeviceId::from_raw([1; 16])]).unwrap(),
         &m.public(),
     )
     .unwrap();
@@ -415,7 +415,8 @@ fn a_revoked_device_id_is_revoked() {
             2,
             ISSUED_AT,
             &[DeviceId::from_raw([1; 16]), c.device_id()],
-        ),
+        )
+        .unwrap(),
         &m.public(),
     )
     .unwrap();
@@ -483,7 +484,7 @@ fn the_checks_run_in_the_documented_order() {
     );
     let mut revs = CertRevocations::new();
     revs.accept(
-        RevocationList::issue(&m, 1, ISSUED_AT, &[long_own.device_id()]),
+        RevocationList::issue(&m, 1, ISSUED_AT, &[long_own.device_id()]).unwrap(),
         &m.public(),
     )
     .unwrap();

@@ -185,7 +185,7 @@ fn revoking_a_device_id_revokes_every_certificate_of_that_key() {
     let mut revocations = CertRevocations::new();
     revocations
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[first.device_id()]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[first.device_id()]).unwrap(),
             &m.public(),
         )
         .unwrap();

@@ -186,7 +186,7 @@ fn a_revoked_service_certificate_is_revoked() {
     let cert = service_cert_of(SERVICE);
     let mut revs = CertRevocations::new();
     revs.accept(
-        RevocationList::issue(&m, 1, ISSUED_AT, &[cert.device_id()]),
+        RevocationList::issue(&m, 1, ISSUED_AT, &[cert.device_id()]).unwrap(),
         &m.public(),
     )
     .unwrap();

@@ -324,7 +324,7 @@ fn a_revoked_certificate_is_refused() {
     let mut revocations = CertRevocations::new();
     revocations
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]).unwrap(),
             &m.public(),
         )
         .unwrap();
@@ -342,7 +342,7 @@ fn a_revoked_certificate_is_refused() {
     let mut others = CertRevocations::new();
     others
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[DeviceId::from_raw([0x5a; 16])]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[DeviceId::from_raw([0x5a; 16])]).unwrap(),
             &m.public(),
         )
         .unwrap();
@@ -557,7 +557,7 @@ fn revocation_is_checked_only_when_a_list_is_given_and_skipping_it_is_explicit()
     let mut revoking = CertRevocations::new();
     revoking
         .accept(
-            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]),
+            RevocationList::issue(&m, 1, ISSUED_AT, &[cert().device_id()]).unwrap(),
             &m.public(),
         )
         .unwrap();

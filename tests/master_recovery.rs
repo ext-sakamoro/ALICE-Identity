@@ -284,7 +284,7 @@ fn a_device_revoked_before_the_loss_stays_revoked_after_recovery() {
     let (k, did) = original();
     let pk = k.public();
     // before the loss: device 1 revoked
-    let before = RevocationList::issue(&k, 4, AT, &[id(1)]);
+    let before = RevocationList::issue(&k, 4, AT, &[id(1)]).unwrap();
     let mut contact = CertRevocations::new();
     assert_eq!(contact.accept(before.clone(), &pk), Ok(Accepted::Replaced));
     // the master comes back from the code and revokes the lost device 2 on top of the latest list
@@ -304,7 +304,7 @@ fn a_device_revoked_before_the_loss_stays_revoked_after_recovery() {
     }
     // a newer list that leaves device 1 out (a master that came back without the latest list) is refused and the
     // kept list stays
-    let forgetful = RevocationList::issue(&recovered, 6, AT + 120, &[id(2)]);
+    let forgetful = RevocationList::issue(&recovered, 6, AT + 120, &[id(2)]).unwrap();
     assert_eq!(
         contact.accept(forgetful, &pk),
         Err(RevocationListError::DropsRevoked { device_id: id(1) })
@@ -346,7 +346,7 @@ fn degenerate_inputs_give_their_stated_errors() {
     }
     // the last sequence cannot be extended
     let k = KeyPair::from_seed(SEED);
-    let last = RevocationList::issue(&k, u64::MAX, AT, &[id(1)]);
+    let last = RevocationList::issue(&k, u64::MAX, AT, &[id(1)]).unwrap();
     assert!(matches!(
         last.extend(&k, AT, &[id(2)]),
         Err(RevocationListError::Malformed(_))

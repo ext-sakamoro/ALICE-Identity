@@ -51,7 +51,7 @@ fn dev(n: u8) -> DeviceId {
 }
 
 fn list(n: u8, seq: u64, at: u64, revoked: &[DeviceId]) -> RevocationList {
-    RevocationList::issue(&delegate_key(n), seq, at, revoked)
+    RevocationList::issue(&delegate_key(n), seq, at, revoked).unwrap()
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn refuses_a_list_signed_by_another_key_than_the_delegate() {
     // signed by delegate 2 (a key the master did not certify here) and by the master itself
     for l in [
         list(2, 1, T0, &[]),
-        RevocationList::issue(&master(), 1, T0, &[]),
+        RevocationList::issue(&master(), 1, T0, &[]).unwrap(),
     ] {
         let got = DelegatedRevocations::new().accept(l, &d, &mpub(), T0, WINDOW);
         assert_eq!(got, Err(E::WrongSigner));
