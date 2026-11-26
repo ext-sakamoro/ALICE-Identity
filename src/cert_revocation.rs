@@ -33,7 +33,7 @@ pub const REVOCATION_LIST_CONTEXT: &[u8] = b"alice-identity revocation-list v1";
 /// Derivation: a master has at most [`crate::contact_card::MAX_CARD_CERTS`] (16) live device
 /// certificates at a time, and a revocation is never taken back, so a list grows by the devices
 /// retired over the master's lifetime. 4096 allows 256 complete replacements of a full set of 16
-/// devices, the same order as [`crate::master_recovery::MAX_RECOVERY_SETS`]; the ids then take
+/// devices, the same order as `master_recovery::MAX_RECOVERY_SETS` (feature `recovery`); the ids then take
 /// 4096 x 16 B = 64 KiB, and a whole list at most [`MAX_REVOCATION_LIST_LEN`] bytes. A reader can
 /// bound what it accepts from that constant; [`RevocationList::issue`] and
 /// [`RevocationList::from_bytes`] refuse a larger list ([`RevocationListError::TooMany`]).
